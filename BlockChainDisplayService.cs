@@ -16,6 +16,7 @@ namespace First {
             Console.WriteLine($"Data: {block.Data}");
             Console.WriteLine($"Previous Hash: {block.PreviousHash}");
             Console.WriteLine($"Hash: {block.Hash}");
+            Console.WriteLine($"Nonce: {block.Nonce}");
             Console.WriteLine(sep);
         }
     }

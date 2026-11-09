@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using First;
 
+
 var blockChain = new BlockChain();
 var displayService = new BlockChainDisplayService();
 
@@ -94,6 +95,94 @@ bool SearchBlockDataAction() {
     return true;
 }
 
+bool BenchmarkMiningAction() {
+    Console.Clear();
+    var singleThreaded = new Menu("Select benchmark variant", ["Single-threaded", "Mutlti-threaded"]).Show() == 0;
+    var bc = new BlockChain(5, singleThreaded, true);
+    const int blocks = 10;
+
+    var stopwatch = Stopwatch.StartNew();
+    for (int i = 0; i < blocks; ++i) {
+        bc.AddBlock("TestUser", "TestData" + i * 137, DateTime.FromBinary(i * 10_000));
+    }
+    stopwatch.Stop();
+    Console.WriteLine($"\nMined {blocks} blocks in {stopwatch.ElapsedMilliseconds}ms\nAverage: {stopwatch.ElapsedMilliseconds / blocks}ms per block\n");
+    Extensions.Pause();
+    return true;
+}
+
+async Task<bool> MineCustomBlockAction() {
+    Console.Clear();
+    Console.Write("\x1b[3J");
+    int difficulty = Extensions.GetNumber("Enter hash difficulty: ", "Error: difficulty \"{0}\" is invalid/not supported", [1, 32]);
+    MiningService ms = new(new());
+
+    var genesisBlock = new Block {
+        Index = 0,
+        TimeStamp = DateTime.FromBinary(0),
+        Data = "",
+        Author = "",
+        PreviousHash = "0"
+    };
+
+    ms.MineBlock(genesisBlock, 1);
+    Console.Clear();
+
+    var block = new Block {
+        Index = 1,
+        TimeStamp = DateTime.FromBinary(0),
+        Data = "Custom data",
+        Author = "Custom author",
+        PreviousHash = genesisBlock.Hash
+    };
+
+    char[] spinnerFrames = ['|', '/', '-', '\\'];
+    int currentFrame = 0;
+
+    Console.WriteLine();
+    var task = ms.MineBlockAsync(block, difficulty);
+    Console.CursorVisible = false;
+
+    int left, top = 0;
+
+    while (!task.IsCompleted) {
+        lock (Shared.ConsoleLock) {
+            (left, top) = Console.GetCursorPosition();
+
+            Console.SetCursorPosition(0, 0);
+            Console.ForegroundColor = ConsoleColor.Green;
+
+            Console.Write($"Mining the block {spinnerFrames[currentFrame % 4]}");
+            Console.WriteLine(new string(' ', Console.WindowWidth - Console.CursorLeft));
+
+            Console.ResetColor();
+            Console.SetCursorPosition(left, top);
+        }
+
+        ++currentFrame;
+        await Task.Delay(150);
+    }
+    Console.CursorVisible = true;
+
+
+    lock (Shared.ConsoleLock) {
+        Console.ForegroundColor = ConsoleColor.Green;
+        (left, top) = Console.GetCursorPosition();
+        Console.SetCursorPosition(0, 0);
+
+        Console.Write("Block mined!");
+        Console.WriteLine(new string(' ', Console.WindowWidth - Console.CursorLeft));
+        Console.Write(new string(' ', Console.WindowWidth - Console.CursorLeft));
+
+        Console.SetCursorPosition(left, top);
+        Console.ResetColor();
+    }
+
+
+    Extensions.Pause();
+    return true;
+}
+
 bool DisplayChainAction() {
     Console.Clear();
     displayService.DisplayChain(blockChain);
@@ -106,13 +195,19 @@ var menu = new Menu(
     [
         "Get block by index",
         "Search block data",
-        "Display whole chain",
+        "Display whole chain\n",
+
+        "Benchmark Mining",
+        "Mine Custom Block\n",
+
         "Exit"
     ],
     [
         GetBlockByIndexAction,
         SearchBlockDataAction,
         DisplayChainAction,
+        BenchmarkMiningAction,
+        () => MineCustomBlockAction().GetAwaiter().GetResult(),
         () => false
     ]);
 

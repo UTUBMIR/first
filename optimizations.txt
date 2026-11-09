@@ -1,0 +1,18 @@
+ 2750 # initial
+ 2310 # after removing sha256.create and using the static method instead
+ 1446 # after using number date formatting instead + all changes above
+ 1768 # with number date formatting without sha256 static method
+ 1486 # after cooldown
+ 610 # after adding fast byte-comparison
+ 404 # after adding preformatted prefix
+ 276 # static SHA256 still creates something under the hood, use a static instance instead
+ 205 # -c Release
+
+ 1000/2750 # hashes/second before
+0,363636363636364
+
+ 1000/276 # hashes/second after
+3,6231884057971
+
+ 1000/205 # hashes/second after + -c Release
+4,8780487804878

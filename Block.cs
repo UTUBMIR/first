@@ -6,5 +6,6 @@ namespace First {
         public string Author { get; set; } = string.Empty;
         public string PreviousHash { get; set; } = string.Empty;
         public string Hash { get; set; } = string.Empty;
+        public UInt64 Nonce { get; set; }
     }
 }

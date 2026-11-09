@@ -2,42 +2,46 @@ using System.Diagnostics;
 
 namespace First {
     public class BlockChain {
+        public int Difficulty { get; private set; }
         public List<Block> Chain { get; set; }
         private readonly HashingService _hashingService;
+        private readonly MiningService _miningService;
 
-        public BlockChain() {
+        public BlockChain(int difficulty = 4, bool singleThreaded = false, bool syntheticGenesisBlock = false) {
+            Difficulty = difficulty;
             Chain = new List<Block>();
             _hashingService = new HashingService();
-            AddGenesisBlock();
+            _miningService = new MiningService(_hashingService, singleThreaded);
+            AddGenesisBlock(syntheticGenesisBlock);
         }
 
-        private void AddGenesisBlock() {
+        private void AddGenesisBlock(bool synthetic) {
             Debug.Assert(Chain.Count == 0, "Non empty chain");
 
             var genesisBlock = new Block {
                 Index = 0,
-                TimeStamp = DateTime.UtcNow,
+                TimeStamp = synthetic ? DateTime.FromBinary(0) : DateTime.UtcNow,
                 Data = "",
                 Author = "",
                 PreviousHash = "0"
             };
 
-            genesisBlock.Hash = _hashingService.ComputeHash(genesisBlock);
+            _miningService.MineBlock(genesisBlock, 1);
             Chain.Add(genesisBlock);
         }
 
-        public void AddBlock(string author, string data) {
+        public void AddBlock(string author, string data, DateTime? time = null) {
             var lastBlock = Chain[Chain.Count - 1];
 
             var newBlock = new Block {
                 Index = lastBlock.Index + 1,
-                TimeStamp = DateTime.UtcNow,
+                TimeStamp = time ?? DateTime.UtcNow,
                 Data = data,
                 Author = author,
                 PreviousHash = lastBlock.Hash
             };
 
-            newBlock.Hash = _hashingService.ComputeHash(newBlock);
+            _miningService.MineBlock(newBlock, Difficulty);
             Chain.Add(newBlock);
         }
 
@@ -62,6 +66,10 @@ namespace First {
                 }
 
                 if (currentBlock.PreviousHash != previousBlock.Hash) {
+                    return false;
+                }
+
+                if (!currentBlock.Hash.StartsWith(new string('0', Difficulty))) {
                     return false;
                 }
             }
