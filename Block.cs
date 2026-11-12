@@ -4,8 +4,7 @@ namespace First {
     public class Block : ICloneable {
         public int Index { get; set; }
         public DateTime TimeStamp { get; set; }
-        public string Data { get; set; } = string.Empty;
-        public string Author { get; set; } = string.Empty;
+        public required List<Transaction> Transactions { get; set; }
         public string PreviousHash { get; set; } = string.Empty;
         public string Hash { get; set; } = string.Empty;
         public UInt64 Nonce { get; set; }
@@ -18,8 +17,7 @@ namespace First {
             return new Block {
                 Index = Index,
                 TimeStamp = TimeStamp,
-                Data = Data,
-                Author = Author,
+                Transactions = Transactions,
                 PreviousHash = PreviousHash,
                 Hash = Hash,
                 Nonce = Nonce,
@@ -35,8 +33,7 @@ namespace First {
             if (other is null) return false;
             if (Index != other.Index) return false;
             if (TimeStamp != other.TimeStamp) return false;
-            if (Data != other.Data) return false;
-            if (Author != other.Author) return false;
+            if (Transactions.SequenceEqual(other.Transactions)) return false;
             if (PreviousHash != other.PreviousHash) return false;
             if (DifficultyAtMining != other.DifficultyAtMining) return false;
 

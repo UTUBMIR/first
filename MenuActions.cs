@@ -32,47 +32,47 @@ namespace First {
         }
 
         public bool SearchBlockData() {
-            Console.Clear();
-            string query = Extensions.AsyncType(
-                typed => {
-                    if (string.IsNullOrWhiteSpace(typed)) {
-                        Console.WriteLine();
-                        Console.Write("Type to search block data...");
-                        return;
-                    }
-
-                    var matches = _blockChain.Chain
-                        .Where(b => b.Data.Contains(typed, StringComparison.OrdinalIgnoreCase))
-                        .Take(5)
-                        .ToList();
-
-                    Console.WriteLine();
-                    if (matches.Count == 0) {
-                        Extensions.WriteError($"No blocks contain \"{typed}\"");
-                        return;
-                    }
-
-                    Extensions.WriteSuccess($"{matches.Count} match(es):");
-                    foreach (var match in matches) {
-                        Console.WriteLine($"[{match.Index}] {match.Data}");
-                    }
-                },
-                "Search block data: ");
-
-            Console.Clear();
-            var found = _blockChain.FindBlockByData(query);
-
-            if (string.IsNullOrWhiteSpace(query)) {
-                Extensions.WriteError("Search cancelled: no query was entered.");
-            }
-            else if (found is null) {
-                Extensions.WriteError($"No block contains \"{query}\".");
-            }
-            else {
-                _displayService.DisplayBlock(found);
-            }
-
-            Extensions.Pause();
+            // Console.Clear();
+            // string query = Extensions.AsyncType(
+            //     typed => {
+            //         if (string.IsNullOrWhiteSpace(typed)) {
+            //             Console.WriteLine();
+            //             Console.Write("Type to search block data...");
+            //             return;
+            //         }
+            //
+            //         var matches = _blockChain.Chain
+            //             .Where(b => b.Data.Contains(typed, StringComparison.OrdinalIgnoreCase))
+            //             .Take(5)
+            //             .ToList();
+            //
+            //         Console.WriteLine();
+            //         if (matches.Count == 0) {
+            //             Extensions.WriteError($"No blocks contain \"{typed}\"");
+            //             return;
+            //         }
+            //
+            //         Extensions.WriteSuccess($"{matches.Count} match(es):");
+            //         foreach (var match in matches) {
+            //             Console.WriteLine($"[{match.Index}] {match.Data}");
+            //         }
+            //     },
+            //     "Search block data: ");
+            //
+            // Console.Clear();
+            // var found = _blockChain.FindBlockByData(query);
+            //
+            // if (string.IsNullOrWhiteSpace(query)) {
+            //     Extensions.WriteError("Search cancelled: no query was entered.");
+            // }
+            // else if (found is null) {
+            //     Extensions.WriteError($"No block contains \"{query}\".");
+            // }
+            // else {
+            //     _displayService.DisplayBlock(found);
+            // }
+            //
+            // Extensions.Pause();
             return true;
         }
 
@@ -90,22 +90,6 @@ namespace First {
             return true;
         }
 
-        public bool BenchmarkMining() {
-            Console.Clear();
-            var (useGpu, singleThreaded) = SelectMiningBackend();
-            var bc = new BlockChain(5, singleThreaded, true, useGpu);
-            const int blocks = 10;
-
-            var stopwatch = Stopwatch.StartNew();
-            for (int i = 0; i < blocks; ++i) {
-                bc.AddBlock("TestUser", "TestData" + i * 137, DateTime.FromBinary(i * 10_000));
-            }
-            stopwatch.Stop();
-            Console.WriteLine($"\nMined {blocks} blocks in {stopwatch.ElapsedMilliseconds}ms\nAverage: {stopwatch.ElapsedMilliseconds / blocks}ms per block\n");
-            Extensions.Pause();
-            return true;
-        }
-
         public bool MiningBenchmark() => MiningBenchmarkAsync().GetAwaiter().GetResult();
 
         private async Task<bool> MiningBenchmarkAsync() {
@@ -119,8 +103,7 @@ namespace First {
             var genesisBlock = new Block {
                 Index = 0,
                 TimeStamp = DateTime.FromBinary(0),
-                Data = "",
-                Author = "",
+                Transactions = [],
                 PreviousHash = "0"
             };
 
@@ -130,8 +113,7 @@ namespace First {
             var block = new Block {
                 Index = 1,
                 TimeStamp = DateTime.FromBinary(0),
-                Data = "Custom data",
-                Author = "Custom author",
+                Transactions = [],
                 PreviousHash = genesisBlock.Hash
             };
 

@@ -19,8 +19,12 @@ namespace First {
         public void DisplayBlock(Block block) {
             Console.WriteLine($"Index: {block.Index}");
             Console.WriteLine($"TimeStamp: {block.TimeStamp}");
-            Console.WriteLine($"Author: {block.Author}");
-            Console.WriteLine($"Data: {block.Data}");
+            Console.WriteLine($"Transactions:");
+            foreach (var transaction in block.Transactions) {
+                Console.WriteLine("  " + transaction.ToString());
+            }
+            Console.WriteLine();
+
             Console.WriteLine($"Previous Hash: {block.PreviousHash}");
             Console.WriteLine($"Difficulty: {block.DifficultyAtMining}");
             Console.WriteLine($"Hash: {block.Hash}");

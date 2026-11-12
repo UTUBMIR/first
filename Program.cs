@@ -4,6 +4,7 @@ using First;
 
 var blockChain = new BlockChain(4);
 var displayService = new BlockChainDisplayService();
+var transactionService = new TransactionService();
 
 void DisplayAndAssert(bool expected) { // NOTE: Clousing the blockChain variable
     var isV = blockChain.IsChainValid();
@@ -14,17 +15,21 @@ void DisplayAndAssert(bool expected) { // NOTE: Clousing the blockChain variable
     Debug.Assert(expected == isV);
 }
 
-blockChain.AddBlock("Alex", "New user alex registered");
-blockChain.AddBlock("Illya", "Illya bought 16Mb DDR5");
-blockChain.AddBlock("Alex", "Alex contributed to Illya's project. ");
-blockChain.AddBlock("Bob", "Bob sent guaranteed random number of $ (4) to Illya");
-blockChain.AddBlock("Slack", "502 Bad Gateway");
+var transactionPool = new List<Transaction> {
+    transactionService.CreateTransaction("Bob", "Illya", 4),
+    transactionService.CreateTransaction("Alice", "Bob", 23),
+    transactionService.CreateTransaction("Tom", "Bob", 17),
+};
 
-DisplayAndAssert(true);
+blockChain.AddBlock(transactionPool);
+transactionPool.Clear();
 
-blockChain.Chain[1].Data = "hacked data";
-
-DisplayAndAssert(false);
+//
+// DisplayAndAssert(true);
+//
+// blockChain.Chain[1].Data = "hacked data";
+//
+// DisplayAndAssert(false);
 
 Console.WriteLine("press any key to proceed to menu");
 Console.ReadKey();
@@ -35,9 +40,12 @@ var menu = new Menu(
     "Blockchain explorer",
     [
         "Get block by index",
-        "Search block data",
         "Display difficulty history",
         "Display whole chain\n",
+
+        "Add transaction to the pool",
+        "Mine the block",
+        "Validate the chain\n",
 
         "Mining Benchmark\n",
 
@@ -45,10 +53,30 @@ var menu = new Menu(
     ],
     [
         actions.GetBlockByIndex,
-        actions.SearchBlockData,
         actions.DisplayDifficultyHistory,
         actions.DisplayChain,
+
+        () => {
+            transactionPool.Add(transactionService.CreateTransaction("Illya", "Teacher", 5));
+            Extensions.WriteSuccess("Transaction added");
+            Extensions.Pause();
+            return true;
+        },
+        () => {
+            blockChain.AddBlock(transactionPool);
+            transactionPool.Clear();
+            Extensions.WriteSuccess("Block added");
+            Extensions.Pause();
+            return true;
+        },
+        () => {
+            Extensions.WriteSuccess($"Is Valid: {blockChain.IsChainValid()}");
+            Extensions.Pause();
+            return true;
+        },
+
         actions.MiningBenchmark,
+
         () => false
     ]);
 

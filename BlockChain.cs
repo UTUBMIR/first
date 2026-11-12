@@ -6,6 +6,7 @@ namespace First {
         public List<Block> Chain { get; set; }
         private readonly HashingService _hashingService;
         private readonly MiningService _miningService;
+        private readonly TransactionService _transactionService;
 
         public readonly double _targetBlockTime = 3;
         public readonly int _adjustmentInterval = 2;
@@ -15,6 +16,7 @@ namespace First {
             Chain = new List<Block>();
             _hashingService = new HashingService();
             _miningService = new MiningService(singleThreaded, useGpu);
+            _transactionService = new TransactionService();
             AddGenesisBlock(syntheticGenesisBlock);
         }
 
@@ -24,8 +26,7 @@ namespace First {
             var genesisBlock = new Block {
                 Index = 0,
                 TimeStamp = synthetic ? DateTime.FromBinary(0) : DateTime.UtcNow,
-                Data = "",
-                Author = "",
+                Transactions = [],
                 PreviousHash = "0"
             };
 
@@ -33,14 +34,22 @@ namespace First {
             Chain.Add(genesisBlock);
         }
 
-        public void AddBlock(string author, string data, DateTime? time = null) {
+        public void AddBlock(List<Transaction> transactions) {
+            foreach (var transaction in transactions) {
+                if (_transactionService.ValidateTransaction(transaction) is (false, var errorMessage)) {
+                    var msg = $"Invalid transaction: {errorMessage}";
+                    Extensions.WriteError(msg);
+                    throw new ArgumentException(msg);
+                }
+            }
+            var transactionCopy = new List<Transaction>(transactions);
+
             var lastBlock = Chain[Chain.Count - 1];
 
             var newBlock = new Block {
                 Index = lastBlock.Index + 1,
-                TimeStamp = time ?? DateTime.UtcNow,
-                Data = data,
-                Author = author,
+                TimeStamp = DateTime.UtcNow,
+                Transactions = transactionCopy,
                 PreviousHash = lastBlock.Hash
             };
 
@@ -59,9 +68,9 @@ namespace First {
             return Chain[index];
         }
 
-        public Block? FindBlockByData(string data) {
-            return Chain.Find(b => b.Data.Contains(data, StringComparison.OrdinalIgnoreCase));
-        }
+        // public Block? FindBlockByData(string data) {
+        //     return Chain.Find(b => b.Data.Contains(data, StringComparison.OrdinalIgnoreCase));
+        // }
 
         public bool IsChainValid() {
             for (int i = 1; i < Chain.Count; i++) {

@@ -12,9 +12,11 @@ namespace First {
 
         // once per block
         public static byte[] EncodePrefix(Block block) {
+            var transactionRawData = string.Concat(block.Transactions.Select(t => t.ToRawString()));
+
             var prefix = string.Create(
                 CultureInfo.InvariantCulture,
-                $"{block.Index}{block.TimeStamp.ToBinary()}{block.Data}{block.Author}{block.DifficultyAtMining}{block.PreviousHash}");
+                $"{block.Index}{block.TimeStamp.ToBinary()}{transactionRawData}{block.DifficultyAtMining}{block.PreviousHash}");
             return Encoding.UTF8.GetBytes(prefix);
         }
 
