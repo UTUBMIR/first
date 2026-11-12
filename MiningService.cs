@@ -1,12 +1,36 @@
 using System.Diagnostics;
 
 namespace First {
+    public readonly record struct MiningResult(ulong Iterations, TimeSpan Duration) {
+        public double HashesPerSecond =>
+            Duration.TotalSeconds > 0 ? Iterations / Duration.TotalSeconds : 0;
+
+        public string FormatHashRate(double hashesPerSecond) {
+            string[] units = ["H/s", "kH/s", "MH/s", "GH/s", "TH/s", "PH/s", "EH/s"];
+
+            if (hashesPerSecond <= 0) {
+                return $"0{units[0]}";
+            }
+
+            int unitIndex = 0;
+            double value = hashesPerSecond;
+
+            while (value >= 1000 && unitIndex < units.Length - 1) {
+                value /= 1000;
+                ++unitIndex;
+            }
+
+            return $"{value:F3}{units[unitIndex]}";
+        }
+
+        public string FormattedHashRate() {
+            return FormatHashRate(HashesPerSecond);
+        }
+    }
     public class MiningService {
-        private readonly HashingService _hashingService;
         private readonly bool _singleThreaded;
 
-        public MiningService(HashingService hashingService, bool singleThreaded = false) {
-            _hashingService = hashingService;
+        public MiningService(bool singleThreaded = false) {
             _singleThreaded = singleThreaded;
         }
 
@@ -18,38 +42,19 @@ namespace First {
             return (difficulty & 1) != 1 || (hash[fullBytes] & 0xF0) == 0;
         }
 
-        public Task MineBlockAsync(Block block, int difficulty) {
+        public Task<MiningResult> MineBlockAsync(Block block, int difficulty) {
             return Task.Run(() => MineBlock(block, difficulty));
         }
 
-        public void MineBlock(Block block, int difficulty) {
+        public MiningResult MineBlock(Block block, int difficulty) {
             Debug.Assert(block.Nonce == 0);
+
+            block.DifficultyAtMining = difficulty;
 
             ulong iterations = 0;
             var stopwatch = Stopwatch.StartNew();
-            var prefix = _hashingService.EncodePrefix(block);
 
-            if (_singleThreaded) { // avoid the parallel if we are singe-threaded anyway
-                Span<byte> digest = stackalloc byte[32];
-                ulong nonce = 0;
-
-                while (true) {
-                    _hashingService.ComputeHash(prefix, nonce, digest);
-                    ++iterations;
-
-                    if (MeetsDifficulty(digest, difficulty)) { // myBlock.Hash.StartsWith(prefix)
-                        stopwatch.Stop();
-                        block.Hash = Convert.ToHexStringLower(digest);
-                        block.Nonce = nonce;
-                        Console.WriteLine($"Mined block in {iterations} iterations, used {stopwatch.ElapsedMilliseconds}ms with difficulty: {difficulty}");
-                        return;
-                    }
-
-                    ++nonce;
-                }
-            }
-
-            var coreCount = Environment.ProcessorCount;
+            var coreCount = _singleThreaded ? 1 : Environment.ProcessorCount;
             var coreIds = Enumerable.Range(0, coreCount).ToList();
 
             var options = new ParallelOptions {
@@ -59,36 +64,42 @@ namespace First {
             var step = ulong.MaxValue / (ulong)coreCount;
 
             Parallel.ForEach(coreIds, options, (coreId, loop) => {
-                ulong nonce = step * (ulong)coreId;
+                var blockHasher = new BlockHasher();
+
+                var _block = block.Clone();
+                _block.Nonce = step * (ulong)coreId;
                 ulong iters = 0;
-                Span<byte> digest = stackalloc byte[32];
 
-                while (true) {
-                    _hashingService.ComputeHash(prefix, nonce, digest);
+                try {
+                    while (true) {
+                        var hash = blockHasher.ComputeHashBinary(_block);
 
-                    if (loop.IsStopped) {
-                        Interlocked.Add(ref iterations, iters);
-                        return;
-                    }
-                    if (MeetsDifficulty(digest, difficulty)) {
-                        loop.Stop();
-                        stopwatch.Stop();
-
-                        block.Hash = Convert.ToHexStringLower(digest);
-                        block.Nonce = nonce;
-                        return;
-                    }
-
-                    if (nonce % 10_000_000 == 0 && nonce != 0) {
-                        Interlocked.Add(ref iterations, iters);
-                        iters = 0;
-                        lock (Shared.ConsoleLock) {
-                            Console.WriteLine($"Mining at ~{iterations} - {Convert.ToHexStringLower(digest)}");
+                        if (loop.IsStopped) {
+                            break;
                         }
-                    }
+                        if (MeetsDifficulty(hash, difficulty)) {
+                            loop.Stop();
+                            stopwatch.Stop();
+                            block.Nonce = _block.Nonce;
+                            block.Hash = Convert.ToHexStringLower(hash);
+                            block.MiningDuration = stopwatch.Elapsed.TotalSeconds;
+                            break;
+                        }
 
-                    ++nonce;
-                    ++iters;
+                        if (_block.Nonce % 10_000_000 == 0 && _block.Nonce != 0) {
+                            Interlocked.Add(ref iterations, iters);
+                            iters = 0;
+                            lock (Shared.ConsoleLock) {
+                                Console.WriteLine($"Mining at ~{iterations} - {Convert.ToHexStringLower(hash)}");
+                            }
+                        }
+
+                        ++_block.Nonce;
+                        ++iters;
+                    }
+                }
+                finally {
+                    Interlocked.Add(ref iterations, iters);
                 }
             });
 
@@ -96,7 +107,7 @@ namespace First {
                 Console.WriteLine($"\nMined block in {iterations} iterations, used {stopwatch.ElapsedMilliseconds}ms with difficulty: {difficulty}");
             }
 
+            return new MiningResult(iterations, stopwatch.Elapsed);
         }
     }
 }
-

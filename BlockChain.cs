@@ -7,11 +7,14 @@ namespace First {
         private readonly HashingService _hashingService;
         private readonly MiningService _miningService;
 
+        public readonly double _targetBlockTime = 3;
+        public readonly int _adjustmentInterval = 2;
+
         public BlockChain(int difficulty = 4, bool singleThreaded = false, bool syntheticGenesisBlock = false) {
             Difficulty = difficulty;
             Chain = new List<Block>();
             _hashingService = new HashingService();
-            _miningService = new MiningService(_hashingService, singleThreaded);
+            _miningService = new MiningService(singleThreaded);
             AddGenesisBlock(syntheticGenesisBlock);
         }
 
@@ -43,6 +46,10 @@ namespace First {
 
             _miningService.MineBlock(newBlock, Difficulty);
             Chain.Add(newBlock);
+
+            if (newBlock.Index % _adjustmentInterval == 0) {
+                AdjustDifficulty();
+            }
         }
 
         public Block? GetBlockByIndex(int index) { // FIXME: Why int32?
@@ -69,11 +76,29 @@ namespace First {
                     return false;
                 }
 
-                if (!currentBlock.Hash.StartsWith(new string('0', Difficulty))) {
+                if (!currentBlock.Hash.StartsWith(new string('0', currentBlock.DifficultyAtMining))) {
                     return false;
                 }
+
+
             }
             return true;
+        }
+
+        private void AdjustDifficulty() {
+            var recent = Chain.Where(b => b.Index > 0).TakeLast(_adjustmentInterval).ToList();
+            if (recent.Count == 0) return;
+
+            var avgTime = recent.Average(b => b.MiningDuration);
+
+            if (avgTime < _targetBlockTime) {
+                ++Difficulty;
+                Console.WriteLine($"Difficulty increased to {Difficulty}");
+            }
+            else if (avgTime > _targetBlockTime) {
+                Difficulty = Math.Max(1, Difficulty - 1);
+                Console.WriteLine($"Difficulty decreased to {Difficulty}");
+            }
         }
     }
 }

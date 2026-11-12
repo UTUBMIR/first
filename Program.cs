@@ -2,7 +2,7 @@
 using First;
 
 
-var blockChain = new BlockChain();
+var blockChain = new BlockChain(4);
 var displayService = new BlockChainDisplayService();
 
 void DisplayAndAssert(bool expected) { // NOTE: Clousing the blockChain variable
@@ -111,11 +111,13 @@ bool BenchmarkMiningAction() {
     return true;
 }
 
-async Task<bool> MineCustomBlockAction() {
+async Task<bool> MiningBenchmarkAction() {
     Console.Clear();
     Console.Write("\x1b[3J");
+
+    var singleThreaded = new Menu("Select benchmark variant", ["Single-threaded", "Mutlti-threaded"]).Show() == 0;
     int difficulty = Extensions.GetNumber("Enter hash difficulty: ", "Error: difficulty \"{0}\" is invalid/not supported", [1, 32]);
-    MiningService ms = new(new());
+    MiningService ms = new(singleThreaded);
 
     var genesisBlock = new Block {
         Index = 0,
@@ -175,6 +177,7 @@ async Task<bool> MineCustomBlockAction() {
         Console.Write(new string(' ', Console.WindowWidth - Console.CursorLeft));
 
         Console.SetCursorPosition(left, top);
+        Console.WriteLine($"Mining speed is {task.Result.FormattedHashRate()}");
         Console.ResetColor();
     }
 
@@ -190,24 +193,32 @@ bool DisplayChainAction() {
     return true;
 }
 
+bool DisplayChainDifficultyHistoryAction() {
+    Console.Clear();
+    displayService.DisplayDifficultyHistory(blockChain);
+    Extensions.Pause();
+    return true;
+}
+
+
 var menu = new Menu(
     "Blockchain explorer",
     [
         "Get block by index",
         "Search block data",
+        "Display difficulty history",
         "Display whole chain\n",
 
-        "Benchmark Mining",
-        "Mine Custom Block\n",
+        "Mining Benchmark\n",
 
         "Exit"
     ],
     [
         GetBlockByIndexAction,
         SearchBlockDataAction,
+        DisplayChainDifficultyHistoryAction,
         DisplayChainAction,
-        BenchmarkMiningAction,
-        () => MineCustomBlockAction().GetAwaiter().GetResult(),
+        () => MiningBenchmarkAction().GetAwaiter().GetResult(),
         () => false
     ]);
 
