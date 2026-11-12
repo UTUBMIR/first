@@ -24,6 +24,36 @@ var transactionPool = new List<Transaction> {
 blockChain.AddBlock(transactionPool);
 transactionPool.Clear();
 
+transactionPool.AddRange([
+    transactionService.CreateTransaction("Illya", "Bob", 1),
+    transactionService.CreateTransaction("Bob", "Tom", 9),
+]);
+
+blockChain.AddBlock(transactionPool);
+transactionPool.Clear();
+
+transactionPool.AddRange([
+    transactionService.CreateTransaction("Tom", "Alice", 92),
+    transactionService.CreateTransaction("Illya", "Alice", 83),
+    transactionService.CreateTransaction("Tom", "Illya", 48),
+    transactionService.CreateTransaction("Bob", "Alice", 37),
+]);
+
+blockChain.AddBlock(transactionPool);
+transactionPool.Clear();
+
+transactionPool.AddRange([
+    transactionService.CreateTransaction("Illya", "Tom", 430),
+    transactionService.CreateTransaction("Alice", "Bob", 12),
+    transactionService.CreateTransaction("Illya", "Alice", 53),
+]);
+
+blockChain.AddBlock(transactionPool);
+transactionPool.Clear();
+
+
+
+
 //
 // DisplayAndAssert(true);
 //
@@ -43,6 +73,8 @@ var menu = new Menu(
         "Display difficulty history",
         "Display whole chain\n",
 
+        "Search transaction by id",
+        "Search user occurences",
         "Add transaction to the pool",
         "Mine the block",
         "Validate the chain\n",
@@ -56,8 +88,25 @@ var menu = new Menu(
         actions.DisplayDifficultyHistory,
         actions.DisplayChain,
 
+        actions.SearchTransactionById,
+        actions.SearchUserOccurences,
         () => {
-            transactionPool.Add(transactionService.CreateTransaction("Illya", "Teacher", 5));
+            Console.Write("Enter sender: ");
+            var sender = Console.ReadLine();
+
+            Console.Write("Enter reciever: ");
+            var reciever = Console.ReadLine();
+
+            var amount = Extensions.GetNumber("Enter amount: ", "Error: Amount cannot be negative!", [0, int.MaxValue]);
+
+            try {
+                transactionPool.Add(transactionService.CreateTransaction(sender, reciever, amount));
+            }
+            catch (Exception e) {
+                Extensions.WriteError($"Failed to add transaction: {e}");
+                return true;
+            }
+
             Extensions.WriteSuccess("Transaction added");
             Extensions.Pause();
             return true;

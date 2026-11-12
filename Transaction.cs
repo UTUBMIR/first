@@ -20,7 +20,7 @@ namespace First {
         }
 
         public override string ToString() {
-            return $"Transaction ID: {Id}, From {From},\tTo: {To},\tAmount: {Amount},\tTimeStamp: {TimeStamp}";
+            return $"Transaction ID: {Id,-20} From: {From,-15} To: {To,-15} Amount: {Amount,10:F2} Timestamp: {TimeStamp:g}";
         }
     }
 }

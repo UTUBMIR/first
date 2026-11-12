@@ -31,50 +31,133 @@ namespace First {
             return true;
         }
 
-        public bool SearchBlockData() {
-            // Console.Clear();
-            // string query = Extensions.AsyncType(
-            //     typed => {
-            //         if (string.IsNullOrWhiteSpace(typed)) {
-            //             Console.WriteLine();
-            //             Console.Write("Type to search block data...");
-            //             return;
-            //         }
-            //
-            //         var matches = _blockChain.Chain
-            //             .Where(b => b.Data.Contains(typed, StringComparison.OrdinalIgnoreCase))
-            //             .Take(5)
-            //             .ToList();
-            //
-            //         Console.WriteLine();
-            //         if (matches.Count == 0) {
-            //             Extensions.WriteError($"No blocks contain \"{typed}\"");
-            //             return;
-            //         }
-            //
-            //         Extensions.WriteSuccess($"{matches.Count} match(es):");
-            //         foreach (var match in matches) {
-            //             Console.WriteLine($"[{match.Index}] {match.Data}");
-            //         }
-            //     },
-            //     "Search block data: ");
-            //
-            // Console.Clear();
-            // var found = _blockChain.FindBlockByData(query);
-            //
-            // if (string.IsNullOrWhiteSpace(query)) {
-            //     Extensions.WriteError("Search cancelled: no query was entered.");
-            // }
-            // else if (found is null) {
-            //     Extensions.WriteError($"No block contains \"{query}\".");
-            // }
-            // else {
-            //     _displayService.DisplayBlock(found);
-            // }
-            //
-            // Extensions.Pause();
+        public static void WriteHighlighted(string text, string search) {
+            var index = 0;
+            var lastIndex = 0;
+
+            while ((index = text.IndexOf(search, lastIndex, StringComparison.OrdinalIgnoreCase)) != -1) {
+                Console.Write(text[lastIndex..index]);
+
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.Write(text.Substring(index, search.Length));
+                Console.ResetColor();
+
+                lastIndex = index + search.Length;
+            }
+
+            Console.WriteLine(text[lastIndex..]);
+        }
+
+        public bool SearchTransactionById() {
+            Console.Clear();
+            string query = Extensions.AsyncType(
+                typed => {
+                    if (string.IsNullOrWhiteSpace(typed)) {
+                        Console.WriteLine();
+                        Console.Write("Type to search transaction by id...");
+                        return;
+                    }
+
+                    var matches = _blockChain.Chain
+                        .SelectMany(b => b.Transactions)
+                        .Select(t => (transaction: t, distance: Extensions.WordDifferenceMin(typed, t.Id)))
+                        .Where(x => x.distance < 5)
+                        .OrderBy(x => x.distance)
+                        .Select(x => x.transaction)
+                        .ToList();
+
+                    Console.WriteLine();
+                    if (matches.Count == 0) {
+                        Extensions.WriteError($"No transaction id's contain \"{typed}\"");
+                        return;
+                    }
+
+                    Extensions.WriteSuccess($"{matches.Count} match(es):");
+                    Console.Write("> ");
+                    foreach (var match in matches) {
+                        Console.WriteLine(match.ToString());
+                    }
+                },
+                "Search transaction: ");
             return true;
         }
+
+        public bool SearchUserOccurences() {
+            Console.Clear();
+            string? user = null;
+
+            string query = Extensions.AsyncType(
+                typed => {
+                    if (string.IsNullOrWhiteSpace(typed)) {
+                        Console.WriteLine();
+                        Console.Write("Type to search user by name...");
+                        return;
+                    }
+
+                    var matches = _blockChain.Chain
+                        .SelectMany(b => b.Transactions)
+                        .SelectMany(t => new[] { t.From, t.To })
+                        .Distinct()
+                        .Select(user => (user, distance: Extensions.WordDifferenceMin(typed, user)))
+                        .Where(x => x.distance < 5)
+                        .OrderBy(x => x.distance)
+                        .Select(x => x.user)
+                        .ToList();
+
+                    user = matches[0];
+
+                    Console.WriteLine();
+                    if (matches.Count == 0) {
+                        Extensions.WriteError($"No username contains \"{typed}\"");
+                        return;
+                    }
+
+                    Extensions.WriteSuccess($"{matches.Count} match(es):");
+                    Console.Write("> ");
+                    foreach (var match in matches) {
+                        Console.WriteLine(match.ToString());
+                    }
+                },
+                "Search user: ");
+
+            if (user is null) return true;
+
+            bool Find(bool from, bool to) {
+                Console.WriteLine($"All transactions where {user}{(from ? " sent" : "")}{(from && to ? " or" : "")}{(to ? " received" : "")}:\n");
+
+                var matches = _blockChain.Chain
+                    .SelectMany(b => b.Transactions)
+                    .Where(t => from && t.From.Equals(user, StringComparison.OrdinalIgnoreCase) ||
+                                  to && t.To.Equals(user, StringComparison.OrdinalIgnoreCase));
+
+                foreach (var match in matches) {
+                    WriteHighlighted(match.ToString(), user);
+                }
+                Extensions.Pause();
+
+                return true;
+
+            }
+
+            var occurences = new Menu($"Find occurences of {user}", [
+                "Find all occurences",
+                "Find all sent",
+                "Find all received\n",
+
+                "Exit to menu"
+            ], [
+                () => Find(true, true),
+                () => Find(true, false),
+                () => Find(false, true),
+
+                () => false
+            ]);
+
+            occurences.Invoke();
+
+            return true;
+        }
+
 
         public bool DisplayChain() {
             Console.Clear();
