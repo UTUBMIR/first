@@ -10,11 +10,11 @@ namespace First {
         public readonly double _targetBlockTime = 3;
         public readonly int _adjustmentInterval = 2;
 
-        public BlockChain(int difficulty = 4, bool singleThreaded = false, bool syntheticGenesisBlock = false) {
+        public BlockChain(int difficulty = 4, bool singleThreaded = false, bool syntheticGenesisBlock = false, bool useGpu = true) {
             Difficulty = difficulty;
             Chain = new List<Block>();
             _hashingService = new HashingService();
-            _miningService = new MiningService(singleThreaded);
+            _miningService = new MiningService(singleThreaded, useGpu);
             AddGenesisBlock(syntheticGenesisBlock);
         }
 
