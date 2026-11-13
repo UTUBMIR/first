@@ -1,3 +1,7 @@
+// SHA-256 compression logic adapted from Brad Conte's public-domain implementation:
+// https://github.com/B-Con/crypto-algorithms/blob/master/sha256.c
+// See THIRD_PARTY_NOTICES.md for details
+
 using System.Runtime.CompilerServices;
 using ILGPU;
 using ILGPU.Runtime;

@@ -16,6 +16,5 @@ namespace First.GpuMining {
         public bool PreferCpuAccelerator { get; init; } = false;
         public int BatchSize { get; init; } = 1 << 20;
         public bool VerifyResults { get; init; } = true;
-        public bool FallBackToCpu { get; init; } = true;
     }
 }

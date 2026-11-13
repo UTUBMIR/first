@@ -204,7 +204,7 @@ namespace First {
             int currentFrame = 0;
 
             MiningProgress? latestProgress = null;
-            var progressLock = new object();
+            var progressLock = new Lock();
             var progress = new Progress<MiningProgress>(p => {
                 lock (progressLock) latestProgress = p;
             });

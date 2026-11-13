@@ -7,7 +7,7 @@ using ILGPU.Runtime;
 
 namespace First.GpuMining {
     public sealed class GpuStringMiner : IDisposable {
-        private static readonly object SharedLock = new();
+        private static readonly Lock SharedLock = new();
         private static GpuStringMiner? _shared;
         private static bool _sharedFailed;
 
@@ -60,33 +60,42 @@ namespace First.GpuMining {
                 throw new ArgumentOutOfRangeException(nameof(options), "BatchSize must be positive.");
             }
 
-            _context = Context.CreateDefault();
-
-            Device device;
+            var context = Context.CreateDefault();
+            Accelerator? accelerator = null;
             try {
-                device = _context.GetPreferredDevice(preferCPU: _options.PreferCpuAccelerator);
-            }
-            catch when (_options.FallBackToCpu) {
-                device = _context.GetPreferredDevice(preferCPU: true);
-            }
+                var device = context.GetPreferredDevice(preferCPU: _options.PreferCpuAccelerator);
 
-            _accelerator = device.CreateAccelerator(_context);
-            _kernel = _accelerator.LoadAutoGroupedStreamKernel<
-                Index1D,
-                ArrayView<uint>,
-                ArrayView<byte>,
-                int,
-                uint,
-                ArrayView<uint>,
-                ArrayView<uint>,
-                ulong,
-                ArrayView<uint>>(GpuMineKernel.Mine);
+                if (!_options.PreferCpuAccelerator && device.AcceleratorType == AcceleratorType.CPU) {
+                    throw new InvalidOperationException(
+                        "No GPU accelerator is available. Falling back to the native CPU miner.");
+                }
 
-            _midBuf = _accelerator.Allocate1D<uint>(8);
-            _tailBuf = _accelerator.Allocate1D<byte>(64);
-            _kBuf = _accelerator.Allocate1D<uint>(GpuSha256.K);
-            _targetBuf = _accelerator.Allocate1D<uint>(DifficultyTarget.WordCount);
-            _resBuf = _accelerator.Allocate1D<uint>(11);
+                accelerator = device.CreateAccelerator(context);
+
+                _context = context;
+                _accelerator = accelerator;
+                _kernel = accelerator.LoadAutoGroupedStreamKernel<
+                    Index1D,
+                    ArrayView<uint>,
+                    ArrayView<byte>,
+                    int,
+                    uint,
+                    ArrayView<uint>,
+                    ArrayView<uint>,
+                    ulong,
+                    ArrayView<uint>>(GpuMineKernel.Mine);
+
+                _midBuf = accelerator.Allocate1D<uint>(8);
+                _tailBuf = accelerator.Allocate1D<byte>(64);
+                _kBuf = accelerator.Allocate1D<uint>(GpuSha256.K);
+                _targetBuf = accelerator.Allocate1D<uint>(DifficultyTarget.WordCount);
+                _resBuf = accelerator.Allocate1D<uint>(11);
+            }
+            catch {
+                accelerator?.Dispose();
+                context.Dispose();
+                throw;
+            }
         }
 
         public GpuMiningResult Mine(
