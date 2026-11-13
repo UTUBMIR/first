@@ -33,7 +33,7 @@ namespace First {
             if (other is null) return false;
             if (Index != other.Index) return false;
             if (TimeStamp != other.TimeStamp) return false;
-            if (Transactions.SequenceEqual(other.Transactions)) return false;
+            if (!Transactions.SequenceEqual(other.Transactions)) return false;
             if (PreviousHash != other.PreviousHash) return false;
             if (DifficultyAtMining != other.DifficultyAtMining) return false;
 
