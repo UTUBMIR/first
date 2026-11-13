@@ -50,6 +50,7 @@ namespace First.GpuMining {
         private readonly MemoryBuffer1D<uint, Stride1D.Dense> _kBuf;
         private readonly MemoryBuffer1D<uint, Stride1D.Dense> _targetBuf;
         private readonly MemoryBuffer1D<uint, Stride1D.Dense> _resBuf;
+        private readonly uint[] _resHost = new uint[11];
         private readonly Lock _lock = new();
 
         public string DeviceName => _accelerator.Name;
@@ -127,12 +128,31 @@ namespace First.GpuMining {
                     cancellationToken.ThrowIfCancellationRequested();
 
                     ulong count = (ulong)_options.BatchSize;
+                    if (count < (ulong)GpuMineKernel.NoncesPerThread)
+                        count = (ulong)GpuMineKernel.NoncesPerThread;
                     if (start > ulong.MaxValue - count + 1)
                         count = ulong.MaxValue - start + 1;
 
+                    ulong threads = count / (ulong)GpuMineKernel.NoncesPerThread;
+                    if (threads == 0) {
+                        // Fewer than NoncesPerThread nonces remain (only possible
+                        // at the very end of the ulong nonce space): finish on CPU.
+                        while (true) {
+                            var hash = Recompute(prefix, start);
+                            ++hashes;
+                            if (target.Meets(hash))
+                                return new GpuMiningResult(true, start, hash, hashes, stopwatch.Elapsed);
+                            if (start == ulong.MaxValue)
+                                return new GpuMiningResult(false, 0, Array.Empty<byte>(), hashes, stopwatch.Elapsed);
+                            ++start;
+                        }
+                    }
+
+                    ulong processed = threads * (ulong)GpuMineKernel.NoncesPerThread;
+
                     _resBuf.MemSetToZero();
                     _kernel(
-                        (int)count,
+                        (int)threads,
                         _midBuf.View,
                         _tailBuf.View,
                         tailLen,
@@ -143,8 +163,9 @@ namespace First.GpuMining {
                         _resBuf.View);
                     _accelerator.Synchronize();
 
-                    var r = _resBuf.GetAsArray1D();
-                    hashes += count;
+                    _resBuf.View.CopyToCPU(_resHost);
+                    var r = _resHost;
+                    hashes += processed;
 
                     if (r[0] != 0) {
                         ulong nonce = ((ulong)r[2] << 32) | r[1];
@@ -172,7 +193,7 @@ namespace First.GpuMining {
 
                     if (progress is not null && stopwatch.Elapsed - lastProgress >= TimeSpan.FromMilliseconds(600)) {
                         progress.Report(new GpuMiningProgress(
-                            start + count - 1,
+                            start + processed - 1,
                             hashes,
                             stopwatch.Elapsed.TotalSeconds > 0
                                 ? hashes / stopwatch.Elapsed.TotalSeconds
@@ -181,10 +202,10 @@ namespace First.GpuMining {
                         lastProgress = stopwatch.Elapsed;
                     }
 
-                    if (start + count - 1 == ulong.MaxValue)
+                    if (start + processed - 1 == ulong.MaxValue)
                         return new GpuMiningResult(false, 0, Array.Empty<byte>(), hashes, stopwatch.Elapsed);
 
-                    start += count;
+                    start += processed;
                 }
             }
         }

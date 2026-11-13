@@ -8,6 +8,12 @@ using ILGPU.Runtime;
 
 namespace First.GpuMining {
     public static class GpuMineKernel {
+        /// <summary>
+        /// Number of nonces each GPU thread hashes. Batching several nonces per
+        /// thread amortizes thread launch/scheduling overhead
+        /// </summary>
+        public const int NoncesPerThread = 16;
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static uint Rotr(uint x, int n) => (x >> n) | (x << (32 - n));
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -52,21 +58,43 @@ namespace First.GpuMining {
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static int FormatDecimal(ulong value, byte[] buf, int offset) {
-            if (value == 0) {
-                buf[offset] = (byte)'0';
-                return 1;
+            if (value <= uint.MaxValue) {
+                uint v = (uint)value;
+                int len = v >= 1_000_000_000 ? 10
+                        : v >= 100_000_000 ? 9
+                        : v >= 10_000_000 ? 8
+                        : v >= 1_000_000 ? 7
+                        : v >= 100_000 ? 6
+                        : v >= 10_000 ? 5
+                        : v >= 1_000 ? 4
+                        : v >= 100 ? 3
+                        : v >= 10 ? 2
+                        : 1;
+                int pos = offset + len - 1;
+                do {
+                    buf[pos--] = (byte)('0' + (int)(v % 10));
+                    v /= 10;
+                } while (v != 0);
+                return len;
             }
 
-            byte[] tmp = new byte[20];
-            int len = 0;
-            while (value > 0) {
-                tmp[len++] = (byte)('0' + (int)(value % 10));
+            int len64 = value >= 10_000_000_000_000_000_000UL ? 20
+                      : value >= 1_000_000_000_000_000_000UL ? 19
+                      : value >= 100_000_000_000_000_000UL ? 18
+                      : value >= 10_000_000_000_000_000UL ? 17
+                      : value >= 1_000_000_000_000_000UL ? 16
+                      : value >= 100_000_000_000_000UL ? 15
+                      : value >= 10_000_000_000_000UL ? 14
+                      : value >= 1_000_000_000_000UL ? 13
+                      : value >= 100_000_000_000UL ? 12
+                      : value >= 10_000_000_000UL ? 11
+                      : 10;
+            int pos64 = offset + len64 - 1;
+            do {
+                buf[pos64--] = (byte)('0' + (int)(value % 10));
                 value /= 10;
-            }
-
-            for (int i = 0; i < len; ++i)
-                buf[offset + i] = tmp[len - 1 - i];
-            return len;
+            } while (value != 0);
+            return len64;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -93,9 +121,10 @@ namespace First.GpuMining {
         }
 
         /// <summary>
-        /// Hashes prefix + decimal(nonce) for one nonce. The prefix is split on
-        /// the CPU into a midstate (all complete 64-byte blocks) and a tail
-        /// (0..63 bytes). Only the final 1 or 2 blocks are processed here.
+        /// Hashes prefix + decimal(nonce) for <see cref="NoncesPerThread"/>
+        /// consecutive nonces. The prefix is split on the CPU into a midstate
+        /// (all complete 64-byte blocks) and a tail (0..63 bytes). Only the
+        /// final 1 or 2 blocks are processed here.
         /// </summary>
         public static void Mine(
             Index1D idx,
@@ -108,40 +137,48 @@ namespace First.GpuMining {
             ulong startNonce,
             ArrayView<uint> result)     // [0]=found, [1..2]=nonce, [3..10]=digest
         {
-            ulong nonce = startNonce + (ulong)idx;
+            if (result[0] != 0)
+                return;
+
+            ulong nonceBase = startNonce + (ulong)idx * NoncesPerThread;
 
             byte[] buf = new byte[128];
+            uint[] s = new uint[8];
+            uint[] w = new uint[16];
+
             for (int i = 0; i < tailLen; ++i)
                 buf[i] = tail[i];
 
-            int digits = FormatDecimal(nonce, buf, tailLen);
-            int m = tailLen + digits;
-            ulong totalLen = (ulong)prefixLen + (ulong)digits;
+            for (int n = 0; n < NoncesPerThread; ++n) {
+                ulong nonce = nonceBase + (ulong)n;
 
-            buf[m] = 0x80;
-            int padded = ((m + 9 + 63) / 64) * 64;
-            for (int i = m + 1; i < padded - 8; ++i)
-                buf[i] = 0;
+                int digits = FormatDecimal(nonce, buf, tailLen);
+                int m = tailLen + digits;
+                ulong totalLen = (ulong)prefixLen + (ulong)digits;
 
-            ulong bits = totalLen * 8;
-            int lenPos = padded - 8;
-            for (int i = 0; i < 8; ++i)
-                buf[lenPos + i] = (byte)(bits >> (56 - 8 * i));
+                buf[m] = 0x80;
+                int padded = ((m + 9 + 63) / 64) * 64;
+                for (int i = m + 1; i < padded - 8; ++i)
+                    buf[i] = 0;
 
-            uint[] s = new uint[8];
-            LoadMidstate(s, midstate);
+                ulong bits = totalLen * 8;
+                int lenPos = padded - 8;
+                for (int i = 0; i < 8; ++i)
+                    buf[lenPos + i] = (byte)(bits >> (56 - 8 * i));
 
-            uint[] w = new uint[16];
-            int blocks = padded / 64;
-            for (int b = 0; b < blocks; ++b) {
-                int off = b * 64;
-                for (int i = 0; i < 16; ++i)
-                    w[i] = ReadBE(buf, off + i * 4);
-                Compress(k, w, s);
+                LoadMidstate(s, midstate);
+
+                int blocks = padded / 64;
+                for (int b = 0; b < blocks; ++b) {
+                    int off = b * 64;
+                    for (int i = 0; i < 16; ++i)
+                        w[i] = ReadBE(buf, off + i * 4);
+                    Compress(k, w, s);
+                }
+
+                if (MeetsTarget(s, target))
+                    ReportHit(result, nonce, s);
             }
-
-            if (MeetsTarget(s, target))
-                ReportHit(result, nonce, s);
         }
     }
 }

@@ -41,6 +41,11 @@ namespace First {
         private readonly bool _singleThreaded;
         private readonly GpuStringMiner? _gpuMiner;
 
+        /// <summary>
+        /// Whether gpu succeed initializing
+        /// </summary>
+        public bool UsesGpu => _gpuMiner is not null;
+
         public MiningService(bool singleThreaded = false, bool useGpu = true) {
             _singleThreaded = singleThreaded;
             _gpuMiner = useGpu ? GpuStringMiner.Shared : null;
@@ -85,7 +90,7 @@ namespace First {
 
                         lock (Shared.ConsoleLock) {
                             Console.WriteLine(
-                                $"\nGPU mined block in {gpuResult.HashesTried} checked hashes, " +
+                                $"\nGPU mined block in {gpuResult.HashesTried:N0} checked hashes, " +
                                 $"used {gpuResult.Elapsed.TotalMilliseconds:F0}ms with difficulty: {difficulty}");
                         }
 
@@ -148,7 +153,7 @@ namespace First {
                                 elapsed));
 
                             lock (Shared.ConsoleLock) {
-                                Console.WriteLine($"Mining at ~{iterations} - {Convert.ToHexStringLower(hash)}");
+                                Console.WriteLine($"Mining at ~{iterations:N0} - {Convert.ToHexStringLower(hash)}");
                             }
                         }
 
@@ -162,7 +167,7 @@ namespace First {
             });
 
             lock (Shared.ConsoleLock) {
-                Console.WriteLine($"\nMined block in {iterations} checked hashes, used {stopwatch.ElapsedMilliseconds}ms with difficulty: {difficulty}");
+                Console.WriteLine($"\nMined block in {iterations:N0} checked hashes, used {stopwatch.ElapsedMilliseconds:N0}ms with difficulty: {difficulty}");
             }
 
             return new MiningResult(iterations, stopwatch.Elapsed);

@@ -180,8 +180,16 @@ namespace First {
             Console.Write("\x1b[3J");
 
             var (useGpu, singleThreaded) = SelectMiningBackend();
-            int difficulty = Extensions.GetNumber("Enter hash difficulty: ", "Error: difficulty \"{0}\" is invalid/not supported", [1, 32]);
             MiningService ms = new(singleThreaded, useGpu);
+
+            if (useGpu && !ms.UsesGpu) {
+                Extensions.WriteError("Error: Failed to inititalize GPU");
+                Extensions.Pause();
+                return true;
+            }
+
+            int difficulty = Extensions.GetNumber("Enter hash difficulty: ", "Error: difficulty \"{0}\" is invalid/not supported", [1, 32]);
+
 
             var genesisBlock = new Block {
                 Index = 0,
