@@ -11,4 +11,9 @@
     <PackageReference Include="ILGPU" Version="1.5.3" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="tests/**/*.cs" />
+    <None Remove="tests/**" />
+  </ItemGroup>
+
 </Project>

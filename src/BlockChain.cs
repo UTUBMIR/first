@@ -1,6 +1,11 @@
 using System.Diagnostics;
 
 namespace First {
+    public enum BlockInvalidityReason {
+        Hash,
+        PreviousHash,
+        DifficultyAtMining
+    }
     public class BlockChain {
         public int Difficulty { get; private set; }
         public List<Block> Chain { get; set; }
@@ -11,21 +16,21 @@ namespace First {
         public readonly double _targetBlockTime = 3;
         public readonly int _adjustmentInterval = 2;
 
-        public BlockChain(int difficulty = 4, bool singleThreaded = false, bool syntheticGenesisBlock = false, bool useGpu = true) {
+        public BlockChain(int difficulty = 4, bool singleThreaded = false, bool useGpu = true) {
             Difficulty = difficulty;
             Chain = new List<Block>();
             _hashingService = new HashingService();
             _miningService = new MiningService(singleThreaded, useGpu);
             _transactionService = new TransactionService();
-            AddGenesisBlock(syntheticGenesisBlock);
+            AddGenesisBlock();
         }
 
-        private void AddGenesisBlock(bool synthetic) {
+        private void AddGenesisBlock() {
             Debug.Assert(Chain.Count == 0, "Non empty chain");
 
             var genesisBlock = new Block {
                 Index = 0,
-                TimeStamp = synthetic ? DateTime.FromBinary(0) : DateTime.UtcNow,
+                TimeStamp = DateTime.UtcNow,
                 Transactions = [],
                 PreviousHash = "0"
             };
@@ -73,25 +78,52 @@ namespace First {
         // }
 
         public bool IsChainValid() {
-            for (int i = 1; i < Chain.Count; i++) {
+            return FindFirstInvalidBlock() is null;
+        }
+
+        public (int blockIndex, BlockInvalidityReason reason)? FindFirstInvalidBlock() {
+            for (int i = 1; i < Chain.Count; ++i) {
                 var currentBlock = Chain[i];
                 var previousBlock = Chain[i - 1];
 
                 if (currentBlock.Hash != _hashingService.ComputeHash(currentBlock)) {
-                    return false;
+                    return (i, BlockInvalidityReason.Hash);
                 }
 
                 if (currentBlock.PreviousHash != previousBlock.Hash) {
-                    return false;
+                    return (i, BlockInvalidityReason.PreviousHash);
                 }
 
                 if (!currentBlock.Hash.StartsWith(new string('0', currentBlock.DifficultyAtMining))) {
-                    return false;
+                    return (i, BlockInvalidityReason.DifficultyAtMining);
+                }
+            }
+            return null;
+        }
+
+        public int RepairChain(int startIndex) {
+            // Debug.Assert(IsChainValid() == false);
+            int reMinedBlocks = 0;
+            for (int i = startIndex + 1; i < Chain.Count; ++i) {
+                var currentBlock = Chain[i];
+                var previousBlock = Chain[i - 1];
+
+
+                if (previousBlock.Hash != _hashingService.ComputeHash(previousBlock) || !previousBlock.Hash.StartsWith(new string('0', previousBlock.DifficultyAtMining))) {
+                    previousBlock.Nonce = 0;
+                    _miningService.MineBlock(previousBlock, previousBlock.DifficultyAtMining);
+                    ++reMinedBlocks;
                 }
 
 
+                if (currentBlock.PreviousHash != previousBlock.Hash) {
+                    currentBlock.PreviousHash = previousBlock.Hash;
+                    currentBlock.Nonce = 0;
+                    _miningService.MineBlock(currentBlock, currentBlock.DifficultyAtMining);
+                    ++reMinedBlocks;
+                }
             }
-            return true;
+            return reMinedBlocks;
         }
 
         private void AdjustDifficulty() {
