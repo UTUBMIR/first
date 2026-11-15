@@ -1,3 +1,5 @@
+using static First.TransactionService;
+
 namespace First.Tests;
 
 public class BlockChainTests {
@@ -77,4 +79,29 @@ public class BlockChainTests {
         Assert.True(_chain.IsChainValid());
     }
 
+
+    [Fact]
+    public void InvalidTransactionSender_RejectsBlock() {
+        var result = _chain.AddBlock([
+            new Transaction("", "alice", 37), // creating transaction manually to avoid validation from transactionService
+            new Transaction("tom", "alice", 92)
+        ]);
+
+        Assert.Equal((0, TransactionInvalidityReason.EmptySender), result.Error);
+        Assert.Single(_chain.Chain);
+    }
+
+    [Fact]
+    public void TransactionWithDuplicateId_RejectsBlock() {
+        List<Transaction> transactions = [
+            new Transaction("tom", "alice", 37), // creating transaction manually to avoid validation from transactionService
+            new Transaction("tom", "alice", 92)
+        ];
+        transactions[1].Id = transactions[0].Id;
+
+        var result = _chain.AddBlock(transactions);
+
+        Assert.Equal((0, TransactionInvalidityReason.DuplicateId), result.Error);
+        Assert.Single(_chain.Chain);
+    }
 }

@@ -1,30 +1,38 @@
 namespace First {
     public class TransactionService {
+        public enum TransactionInvalidityReason {
+            EmptySender,
+            EmptyRecipient,
+            InvalidAmount,
+            DuplicateId
+        }
 
         public Transaction CreateTransaction(string from, string to, decimal amount) {
             var transaction = new Transaction(from, to, amount);
 
-            if (ValidateTransaction(transaction) is (false, var errorMessage)) {
-                throw new ArgumentException(errorMessage);
+            if (ValidateTransaction(transaction).Verify(out var error)) {
+                return transaction;
+            }
+            else {
+                throw new ArgumentException(error.ToString());
             }
 
-            return transaction;
         }
 
-        public (bool isValid, string errorMessage) ValidateTransaction(Transaction transaction) {
+        public Failable<TransactionInvalidityReason> ValidateTransaction(Transaction transaction) {
             if (string.IsNullOrEmpty(transaction.From)) {
-                return (false, "Empty sender address");
+                return TransactionInvalidityReason.EmptySender;
             }
 
             if (string.IsNullOrEmpty(transaction.To)) {
-                return (false, "Empty recipient address");
+                return TransactionInvalidityReason.EmptyRecipient;
             }
 
             if (transaction.Amount <= 0) {
-                return (false, "Invalid transaction amount");
+                return TransactionInvalidityReason.InvalidAmount;
             }
 
-            return (true, string.Empty);
+            return Result.Success();
         }
     }
 }

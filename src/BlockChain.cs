@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using static First.TransactionService;
 
 namespace First {
     public enum BlockInvalidityReason {
@@ -6,6 +7,8 @@ namespace First {
         PreviousHash,
         DifficultyAtMining
     }
+
+
     public class BlockChain {
         public int Difficulty { get; private set; }
         public List<Block> Chain { get; set; }
@@ -39,12 +42,36 @@ namespace First {
             Chain.Add(genesisBlock);
         }
 
-        public void AddBlock(List<Transaction> transactions) {
-            foreach (var transaction in transactions) {
-                if (_transactionService.ValidateTransaction(transaction) is (false, var errorMessage)) {
-                    var msg = $"Invalid transaction: {errorMessage}";
-                    Extensions.WriteError(msg);
-                    throw new ArgumentException(msg);
+        private bool TransactionOrItsIdExists(Transaction transaction, int transactionLocalIndex, List<Transaction> localTransactions) {
+            foreach (var block in Chain) { // WARNING: Use a parallel loop if needed in the future
+                foreach (var t in block.Transactions) {
+                    if (t.Id == transaction.Id) {
+                        return true;
+                    }
+                }
+            }
+            foreach (var (i, t) in localTransactions.Index()) {
+                if (transactionLocalIndex == i) continue;
+
+                if (t.Id == transaction.Id) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public Failable<(int transactionIndex, TransactionInvalidityReason reason)> AddBlock(List<Transaction> transactions) {
+            foreach (var (index, transaction) in transactions.Index()) {
+                var valid = _transactionService.ValidateTransaction(transaction);
+
+                if (valid.IsFailure) {
+                    Extensions.WriteError($"Invalid transaction: {valid.Error}");
+                    return (index, valid.Error);
+                }
+
+                if (TransactionOrItsIdExists(transaction, index, transactions)) { // TODO: Combine verifications for all transactions in the block into a single loop
+                    Extensions.WriteError($"Transaction with the same id already exists: \"{transaction.Id}\"");
+                    return (index, TransactionInvalidityReason.DuplicateId);
                 }
             }
             var transactionCopy = new List<Transaction>(transactions);
@@ -64,6 +91,8 @@ namespace First {
             if (newBlock.Index % _adjustmentInterval == 0) {
                 AdjustDifficulty();
             }
+
+            return Result.Success();
         }
 
         public Block? GetBlockByIndex(int index) { // FIXME: Why int32?
@@ -78,10 +107,10 @@ namespace First {
         // }
 
         public bool IsChainValid() {
-            return FindFirstInvalidBlock() is null;
+            return FindFirstInvalidBlock().IsSuccess;
         }
 
-        public (int blockIndex, BlockInvalidityReason reason)? FindFirstInvalidBlock() {
+        public Failable<(int blockIndex, BlockInvalidityReason reason)> FindFirstInvalidBlock() {
             for (int i = 1; i < Chain.Count; ++i) {
                 var currentBlock = Chain[i];
                 var previousBlock = Chain[i - 1];
@@ -98,7 +127,7 @@ namespace First {
                     return (i, BlockInvalidityReason.DifficultyAtMining);
                 }
             }
-            return null;
+            return Result.Success();
         }
 
         public int RepairChain(int startIndex) {
