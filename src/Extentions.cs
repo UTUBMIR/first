@@ -70,22 +70,27 @@ namespace First {
             return dp[len1, len2];
         }
 
-        public static int WordDifferenceMin(string word, string line) {
-            if (word.Length == 0 || line.Length == 0)
-                return 127;
+        public static int WordDifferenceMin(string typed, string target) {
+            if (string.IsNullOrEmpty(typed)) return 0;
+            if (string.IsNullOrEmpty(target)) return 127;
+            typed = typed.ToLower();
+            target = target.ToLower();
+
+            if (typed.Length >= target.Length) {
+                return WordDifference(typed, target);
+            }
 
             int minDist = int.MaxValue;
-            int wlen = word.Length;
+            int tLen = typed.Length;
 
-            for (int i = 0; i <= line.Length - wlen; ++i) {
-                string part = line.Substring(i, wlen);
-                int dist = WordDifference(word, part);
+            for (int i = 0; i <= target.Length - tLen; ++i) {
+                string part = target.Substring(i, tLen);
+                int dist = WordDifference(typed, part);
                 if (dist < minDist) minDist = dist;
             }
 
-            return minDist == int.MaxValue ? 127 : minDist;
+            return minDist;
         }
-
 
         static public void WriteError(object args) {
             Console.ForegroundColor = ConsoleColor.Red;
@@ -166,19 +171,88 @@ namespace First {
             }
         }
 
+
         static public string AskForWord(string[] list, string text = "Type word to search: ") {
             string[] sortedList = (string[])list.Clone();
+
             void ShowPassedWords(string typed) {
-                sortedList = sortedList.OrderBy(word => Extensions.WordDifference(word, typed)).ToArray();
-                Console.Write($"\n>>{sortedList[0]}\n");
-                if (list.Length > 1)
-                    Console.Write(String.Join("\n", sortedList, 1, Math.Min(20, sortedList.Length - 1)));
+                sortedList = list
+                    .OrderBy(word => Extensions.WordDifferenceMin(typed, word))
+                    .ThenBy(word => word.StartsWith(typed, StringComparison.OrdinalIgnoreCase) ? 0 : 1) // Prioritize prefix matches
+                    .ThenBy(word => word.Length)
+                    .ToArray();
+
+                Console.Write($"\n\n > {sortedList[0]}\n");
+                if (sortedList.Length > 1)
+                    Console.Write(string.Join("\n", sortedList, 1, Math.Min(20, sortedList.Length - 1)));
             }
+
             Extensions.AsyncType(ShowPassedWords, text);
 
             Console.Clear();
             return sortedList[0];
         }
+
+        static public T? AskForItem<T>(
+                List<T> list,
+                string prompt = "Type item to search: ",
+                string emptySearchText = "Type to search items...",
+                Action<T>? printItem = null,
+                Func<T, string>[]? selectors = null) {
+
+            printItem ??= item => Console.WriteLine(item);
+            selectors ??= [item => item?.ToString() ?? ""];
+
+            T? found = default;
+
+            string query = Extensions.AsyncType(
+                typed => {
+                    if (string.IsNullOrWhiteSpace(typed)) {
+                        Console.WriteLine();
+                        Console.WriteLine($"{emptySearchText}\n");
+
+                        foreach (var item in list.Take(6)) {
+                            printItem(item);
+                        }
+
+                        if (list.Count > 6) Console.Write("...");
+
+                        return;
+                    }
+
+                    var matches = list
+                        .Select(item => (
+                            item: item,
+                            distance: selectors.Min(selector => Extensions.WordDifferenceMin(typed, selector(item)))
+                        ))
+                        .Where(x => x.distance < 5)
+                        .OrderBy(x => x.distance)
+                        .Select(x => x.item)
+                        .ToList();
+
+                    found = matches.Count > 0 ? matches[0] : default;
+
+                    Console.WriteLine();
+
+                    if (matches.Count == 0) {
+                        Extensions.WriteError($"No items found matching \"{typed}\"");
+                        return;
+                    }
+
+                    Extensions.WriteSuccess($"{matches.Count} match(es):\n");
+                    Console.Write("> ");
+
+                    foreach (var item in matches) {
+                        printItem(item);
+                    }
+                },
+                prompt
+            );
+
+            Console.Clear();
+            return found;
+        }
+
 
     }
 }

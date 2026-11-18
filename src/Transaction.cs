@@ -1,9 +1,14 @@
+using System.Text;
+
 namespace First {
     public class Transaction {
         public string Id { get; set; }
         public string From { get; set; }
         public decimal Amount { get; set; }
         public string To { get; set; }
+
+        public byte[] SenderPublicKey { get; set; }
+        public byte[]? Singature { get; set; }
 
         public DateTime TimeStamp { get; set; }
 
@@ -15,6 +20,10 @@ namespace First {
             TimeStamp = DateTime.Now;
         }
 
+        public byte[] GetDataToSign() {
+            var data = $"{From}{To}{Amount}{TimeStamp}{Id}";
+            return Encoding.UTF8.GetBytes(data);
+        }
         public string ToRawString() {
             return $"{Id}\t{From}\t{To}\t{Amount}\t{TimeStamp}";
         }

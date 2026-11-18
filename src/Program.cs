@@ -5,6 +5,7 @@ using First;
 var blockChain = new BlockChain(4);
 var displayService = new BlockChainDisplayService();
 var transactionService = new TransactionService();
+var walletManager = new WalletManager();
 
 void DisplayAndAssert(bool expected) { // NOTE: Clousing the blockChain variable
     var isV = blockChain.IsChainValid();
@@ -15,37 +16,42 @@ void DisplayAndAssert(bool expected) { // NOTE: Clousing the blockChain variable
     Debug.Assert(expected == isV);
 }
 
+var aliceWallet = walletManager.CreateWallet("Alice").Value;
+var bobWallet = walletManager.CreateWallet("Bob").Value;
+var illyaWallet = walletManager.CreateWallet("Illya").Value;
+var tomWallet = walletManager.CreateWallet("Tom").Value;
+
 var transactionPool = new List<Transaction> {
-    transactionService.CreateTransaction("Bob", "Illya", 4),
-    transactionService.CreateTransaction("Alice", "Bob", 23),
-    transactionService.CreateTransaction("Tom", "Bob", 17),
+    transactionService.CreateTransaction(bobWallet, illyaWallet.Address, 4),
+    transactionService.CreateTransaction(aliceWallet, bobWallet.Address, 23),
+    transactionService.CreateTransaction(tomWallet, bobWallet.Address, 17),
 };
 
 blockChain.AddBlock(transactionPool);
 transactionPool.Clear();
 
 transactionPool.AddRange([
-    transactionService.CreateTransaction("Illya", "Bob", 1),
-    transactionService.CreateTransaction("Bob", "Tom", 9),
+    transactionService.CreateTransaction(illyaWallet, bobWallet.Address, 1),
+    transactionService.CreateTransaction(bobWallet, tomWallet.Address, 9),
 ]);
 
 blockChain.AddBlock(transactionPool);
 transactionPool.Clear();
 
 transactionPool.AddRange([
-    transactionService.CreateTransaction("Tom", "Alice", 92),
-    transactionService.CreateTransaction("Illya", "Alice", 83),
-    transactionService.CreateTransaction("Tom", "Illya", 48),
-    transactionService.CreateTransaction("Bob", "Alice", 37),
+    transactionService.CreateTransaction(tomWallet, aliceWallet.Address, 92),
+    transactionService.CreateTransaction(illyaWallet, aliceWallet.Address, 83),
+    transactionService.CreateTransaction(tomWallet, illyaWallet.Address, 48),
+    transactionService.CreateTransaction(bobWallet, aliceWallet.Address, 37),
 ]);
 
 blockChain.AddBlock(transactionPool);
 transactionPool.Clear();
 
 transactionPool.AddRange([
-    transactionService.CreateTransaction("Illya", "Tom", 430),
-    transactionService.CreateTransaction("Alice", "Bob", 12),
-    transactionService.CreateTransaction("Illya", "Alice", 53),
+    transactionService.CreateTransaction(illyaWallet, tomWallet.Address, 430),
+    transactionService.CreateTransaction(aliceWallet, bobWallet.Address, 12),
+    transactionService.CreateTransaction(illyaWallet, aliceWallet.Address, 53),
 ]);
 
 blockChain.AddBlock(transactionPool);
@@ -64,7 +70,7 @@ transactionPool.Clear();
 Console.WriteLine("press any key to proceed to menu");
 Console.ReadKey();
 
-var actions = new MenuActions(blockChain, displayService);
+var actions = new MenuActions(blockChain, displayService, walletManager);
 
 var menu = new Menu(
     "Blockchain explorer",
@@ -79,6 +85,10 @@ var menu = new Menu(
         "Mine the block",
         "Validate the chain\n",
 
+        "Display all wallets",
+        "Create a new wallet",
+        "Search wallets\n",
+
         "Mining Benchmark\n",
 
         "Exit"
@@ -91,16 +101,30 @@ var menu = new Menu(
         actions.SearchTransactionById,
         actions.SearchUserOccurences,
         () => {
-            Console.Write("Enter sender: ");
-            var sender = Console.ReadLine();
+            actions.SearchWallet(out var senderWallet, "Select sender-wallet: ");
+            if (senderWallet is null) {
+                Extensions.WriteError("No sender was selected");
+                Extensions.Pause();
+                return true;
+            }
 
-            Console.Write("Enter reciever: ");
-            var reciever = Console.ReadLine();
+            actions.SearchWallet(out var receiverWallet, "Select reciever-wallet: "); // Using wallet for simplicity, we don't actually need the wallet of the reciever - only his address
+            if (receiverWallet is null) {
+                Extensions.WriteError("No reciever was selected");
+                Extensions.Pause();
+                return true;
+            }
 
+            Console.Clear();
             var amount = Extensions.GetNumber("Enter amount: ", "Error: Amount cannot be negative!", [0, int.MaxValue]);
 
+            Console.Clear();
+            Console.WriteLine($"Sender: {senderWallet!.Name,-8} : {senderWallet.Address}");
+            Console.WriteLine($"Reciever: {receiverWallet!.Name,-6} : {receiverWallet.Address}");
+            Console.WriteLine($"Amount: {amount}\n");
+
             try {
-                transactionPool.Add(transactionService.CreateTransaction(sender, reciever, amount));
+                transactionPool.Add(transactionService.CreateTransaction(senderWallet, receiverWallet.Address, amount));
             }
             catch (Exception e) {
                 Extensions.WriteError($"Failed to add transaction: {e}");
@@ -123,6 +147,10 @@ var menu = new Menu(
             Extensions.Pause();
             return true;
         },
+
+        () => actions.DisplayAllWallets(),
+        () => actions.CreateNewWallet(),
+        () => actions.SearchWallet(out _),
 
         actions.MiningBenchmark,
 

@@ -2,7 +2,7 @@ using System.Diagnostics;
 using static First.TransactionService;
 
 namespace First {
-    public enum BlockInvalidityReason {
+    public enum BlockValidationError {
         Hash,
         PreviousHash,
         DifficultyAtMining
@@ -60,7 +60,7 @@ namespace First {
             return false;
         }
 
-        public Failable<(int transactionIndex, TransactionInvalidityReason reason)> AddBlock(List<Transaction> transactions) {
+        public Failable<(int transactionIndex, TransactionValidationError reason)> AddBlock(List<Transaction> transactions) {
             foreach (var (index, transaction) in transactions.Index()) {
                 var valid = _transactionService.ValidateTransaction(transaction);
 
@@ -71,7 +71,7 @@ namespace First {
 
                 if (TransactionOrItsIdExists(transaction, index, transactions)) { // TODO: Combine verifications for all transactions in the block into a single loop
                     Extensions.WriteError($"Transaction with the same id already exists: \"{transaction.Id}\"");
-                    return (index, TransactionInvalidityReason.DuplicateId);
+                    return (index, TransactionValidationError.DuplicateId);
                 }
             }
             var transactionCopy = new List<Transaction>(transactions);
@@ -110,21 +110,21 @@ namespace First {
             return FindFirstInvalidBlock().IsSuccess;
         }
 
-        public Failable<(int blockIndex, BlockInvalidityReason reason)> FindFirstInvalidBlock() {
+        public Failable<(int blockIndex, BlockValidationError reason)> FindFirstInvalidBlock() {
             for (int i = 1; i < Chain.Count; ++i) {
                 var currentBlock = Chain[i];
                 var previousBlock = Chain[i - 1];
 
                 if (currentBlock.Hash != _hashingService.ComputeHash(currentBlock)) {
-                    return (i, BlockInvalidityReason.Hash);
+                    return (i, BlockValidationError.Hash);
                 }
 
                 if (currentBlock.PreviousHash != previousBlock.Hash) {
-                    return (i, BlockInvalidityReason.PreviousHash);
+                    return (i, BlockValidationError.PreviousHash);
                 }
 
                 if (!currentBlock.Hash.StartsWith(new string('0', currentBlock.DifficultyAtMining))) {
-                    return (i, BlockInvalidityReason.DifficultyAtMining);
+                    return (i, BlockValidationError.DifficultyAtMining);
                 }
             }
             return Result.Success();

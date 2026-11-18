@@ -4,10 +4,12 @@ namespace First {
     public sealed class MenuActions {
         private readonly BlockChain _blockChain;
         private readonly BlockChainDisplayService _displayService;
+        private readonly WalletManager _walletManager;
 
-        public MenuActions(BlockChain blockChain, BlockChainDisplayService displayService) {
+        public MenuActions(BlockChain blockChain, BlockChainDisplayService displayService, WalletManager walletManager) {
             _blockChain = blockChain;
             _displayService = displayService;
+            _walletManager = walletManager;
         }
 
         public bool GetBlockByIndex() {
@@ -50,75 +52,30 @@ namespace First {
 
         public bool SearchTransactionById() {
             Console.Clear();
-            string query = Extensions.AsyncType(
-                typed => {
-                    if (string.IsNullOrWhiteSpace(typed)) {
-                        Console.WriteLine();
-                        Console.Write("Type to search transaction by id...");
-                        return;
-                    }
+            var transactions = _blockChain.Chain
+                .SelectMany(b => b.Transactions)
+                .ToList();
 
-                    var matches = _blockChain.Chain
-                        .SelectMany(b => b.Transactions)
-                        .Select(t => (transaction: t, distance: Extensions.WordDifferenceMin(typed, t.Id)))
-                        .Where(x => x.distance < 5)
-                        .OrderBy(x => x.distance)
-                        .Select(x => x.transaction)
-                        .ToList();
+            var transaction = Extensions.AskForItem(
+                transactions,
+                "Search transaction: ",
+                "Type to search transaction by id...\n",
+                default,
+                [t => t.Id]);
 
-                    Console.WriteLine();
-                    if (matches.Count == 0) {
-                        Extensions.WriteError($"No transaction id's contain \"{typed}\"");
-                        return;
-                    }
-
-                    Extensions.WriteSuccess($"{matches.Count} match(es):");
-                    Console.Write("> ");
-                    foreach (var match in matches) {
-                        Console.WriteLine(match.ToString());
-                    }
-                },
-                "Search transaction: ");
             return true;
         }
 
-        public bool SearchUserOccurences() {
+        public bool SearchUserOccurences() { // TODO: move this to a separate Extensions method, probably merge with Extensions.AskForWord
             Console.Clear();
-            string? user = null;
-
-            string query = Extensions.AsyncType(
-                typed => {
-                    if (string.IsNullOrWhiteSpace(typed)) {
-                        Console.WriteLine();
-                        Console.Write("Type to search user by name...");
-                        return;
-                    }
-
-                    var matches = _blockChain.Chain
+            var user = Extensions.AskForItem(
+                    _blockChain.Chain
                         .SelectMany(b => b.Transactions)
                         .SelectMany(t => new[] { t.From, t.To })
                         .Distinct()
-                        .Select(user => (user, distance: Extensions.WordDifferenceMin(typed, user)))
-                        .Where(x => x.distance < 5)
-                        .OrderBy(x => x.distance)
-                        .Select(x => x.user)
-                        .ToList();
-
-                    user = matches[0];
-
-                    Console.WriteLine();
-                    if (matches.Count == 0) {
-                        Extensions.WriteError($"No username contains \"{typed}\"");
-                        return;
-                    }
-
-                    Extensions.WriteSuccess($"{matches.Count} match(es):");
-                    Console.Write("> ");
-                    foreach (var match in matches) {
-                        Console.WriteLine(match.ToString());
-                    }
-                },
-                "Search user: ");
+                        .ToList(),
+                        "Search user: ",
+                        "Type to search user by name...");
 
             if (user is null) return true;
 
@@ -279,5 +236,52 @@ namespace First {
 
             return (useGpu, singleThreaded);
         }
+
+        public bool DisplayAllWallets() {
+            Console.WriteLine("Wallets: \n");
+
+            foreach (var wallet in _walletManager.Wallets) {
+                Console.WriteLine($"{wallet.Name,-8} : {wallet.Address,-12} : {Convert.ToBase64String(wallet.PublicKey)[30..]}");
+            }
+            Console.WriteLine();
+
+            Extensions.Pause();
+            return true;
+        }
+
+
+        public bool CreateNewWallet() {
+            string name = "";
+
+            while (true) {
+                Console.Write("Enter new wallet name: ");
+                name = Console.ReadLine() ?? "";
+
+                if (!_walletManager.CreateWallet(name).Verify(out _, out var error)) {
+                    Console.Clear();
+                    Extensions.WriteError($"Error: {error}");
+                    continue;
+                }
+                break;
+            }
+
+            Extensions.WriteSuccess("Wallet created");
+            Extensions.Pause();
+            return true;
+        }
+
+        public bool SearchWallet(out Wallet? wallet, string prompt = "Search wallet: ") {
+            Console.Clear();
+            wallet = Extensions.AskForItem(
+                _walletManager.Wallets,
+                prompt,
+                "Type to search wallets...",
+                wallet => Console.WriteLine($"{wallet.Name,-8} : {wallet.Address}"),
+                [w => w.Name, w => w.Address]
+                );
+
+            return true;
+        }
+
     }
 }

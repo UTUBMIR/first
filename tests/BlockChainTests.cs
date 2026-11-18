@@ -5,6 +5,10 @@ namespace First.Tests;
 public class BlockChainTests {
     private readonly BlockChain _chain;
     private readonly TransactionService _transactionService;
+    private readonly WalletManager _walletManager;
+    private readonly Wallet _aliceWallet;
+    private readonly Wallet _bobWallet;
+    private readonly Wallet _tomWallet;
 
     public BlockChainTests() {
         _chain = new BlockChain(
@@ -12,6 +16,10 @@ public class BlockChainTests {
             singleThreaded: true,
             useGpu: false);
         _transactionService = new TransactionService();
+        _walletManager = new WalletManager();
+        _aliceWallet = _walletManager.CreateWallet("Alice").Value;
+        _bobWallet = _walletManager.CreateWallet("Bob").Value;
+        _tomWallet = _walletManager.CreateWallet("Tom").Value;
     }
 
     [Fact]
@@ -22,7 +30,7 @@ public class BlockChainTests {
 
     [Fact]
     public void AddingBlock_KeepsChainValid() {
-        _chain.AddBlock([_transactionService.CreateTransaction("alice", "bob", 10)]);
+        _chain.AddBlock([_transactionService.CreateTransaction(_aliceWallet, _bobWallet.Address, 10)]);
 
         Assert.Equal(2, _chain.Chain.Count);
         Assert.Equal(_chain.Chain[0].Hash, _chain.Chain[1].PreviousHash);
@@ -31,38 +39,38 @@ public class BlockChainTests {
 
     [Fact]
     public void ModifyingBlockData_InvalidatesChain() {
-        _chain.AddBlock([_transactionService.CreateTransaction("alice", "bob", 10)]);
+        _chain.AddBlock([_transactionService.CreateTransaction(_aliceWallet, _bobWallet.Address, 10)]);
         Assert.True(_chain.IsChainValid());
 
         _chain.Chain[1].Transactions[0].Amount = 999;
 
         Assert.False(_chain.IsChainValid());
-        Assert.Equal((1, BlockInvalidityReason.Hash), _chain.FindFirstInvalidBlock());
+        Assert.Equal((1, BlockValidationError.Hash), _chain.FindFirstInvalidBlock());
     }
 
     [Fact]
     public void ModifyingPreviousHash_InvalidatesChain() {
-        _chain.AddBlock([_transactionService.CreateTransaction("alice", "bob", 10)]);
+        _chain.AddBlock([_transactionService.CreateTransaction(_aliceWallet, _bobWallet.Address, 10)]);
         Assert.True(_chain.IsChainValid());
 
         _chain.Chain[1].PreviousHash = new string('f', 64);
 
         Assert.False(_chain.IsChainValid());
-        Assert.Equal((1, BlockInvalidityReason.Hash), _chain.FindFirstInvalidBlock());
+        Assert.Equal((1, BlockValidationError.Hash), _chain.FindFirstInvalidBlock());
     }
 
     [Fact]
     public void ModifyingBlockAndReMiningIt_InvalidatesChain() {
-        _chain.AddBlock([_transactionService.CreateTransaction("alice", "bob", 10)]);
-        _chain.AddBlock([_transactionService.CreateTransaction("bob", "alice", 7)]);
-        _chain.AddBlock([_transactionService.CreateTransaction("alice", "bob", 19)]);
-        _chain.AddBlock([_transactionService.CreateTransaction("bob", "alice", 23)]);
+        _chain.AddBlock([_transactionService.CreateTransaction(_aliceWallet, _bobWallet.Address, 10)]);
+        _chain.AddBlock([_transactionService.CreateTransaction(_bobWallet, _aliceWallet.Address, 7)]);
+        _chain.AddBlock([_transactionService.CreateTransaction(_aliceWallet, _bobWallet.Address, 19)]);
+        _chain.AddBlock([_transactionService.CreateTransaction(_bobWallet, _aliceWallet.Address, 23)]);
         Assert.True(_chain.IsChainValid());
 
         _chain.Chain[2].Transactions[0].Amount = 70;
 
         Assert.False(_chain.IsChainValid());
-        Assert.Equal((2, BlockInvalidityReason.Hash), _chain.FindFirstInvalidBlock()); // detects hash change
+        Assert.Equal((2, BlockValidationError.Hash), _chain.FindFirstInvalidBlock()); // detects hash change
 
         var ms = new MiningService(singleThreaded: true, useGpu: false);
 
@@ -70,7 +78,7 @@ public class BlockChainTests {
         ms.MineBlock(_chain.Chain[2], _chain.Chain[2].DifficultyAtMining);
 
         Assert.False(_chain.IsChainValid());
-        Assert.Equal((3, BlockInvalidityReason.PreviousHash), _chain.FindFirstInvalidBlock()); // hash of the block is correct, but the previousHash of the block after it reveals the truth
+        Assert.Equal((3, BlockValidationError.PreviousHash), _chain.FindFirstInvalidBlock()); // hash of the block is correct, but the previousHash of the block after it reveals the truth
 
         Console.WriteLine("Repairing BlockChain");
         Assert.Equal(2, _chain.RepairChain(2)); // two blocks were rehashed during reparation process
@@ -83,25 +91,25 @@ public class BlockChainTests {
     [Fact]
     public void InvalidTransactionSender_RejectsBlock() {
         var result = _chain.AddBlock([
-            new Transaction("", "alice", 37), // creating transaction manually to avoid validation from transactionService
-            new Transaction("tom", "alice", 92)
+            new Transaction("", _aliceWallet.Address, 37), // creating transaction manually to avoid validation from transactionService
+            new Transaction(_tomWallet.Address, _aliceWallet.Address, 92)
         ]);
 
-        Assert.Equal((0, TransactionInvalidityReason.EmptySender), result.Error);
+        Assert.Equal((0, TransactionValidationError.EmptySender), result.Error);
         Assert.Single(_chain.Chain);
     }
 
     [Fact]
     public void TransactionWithDuplicateId_RejectsBlock() {
-        List<Transaction> transactions = [
-            new Transaction("tom", "alice", 37), // creating transaction manually to avoid validation from transactionService
-            new Transaction("tom", "alice", 92)
-        ];
-        transactions[1].Id = transactions[0].Id;
+        var first = _transactionService.CreateTransaction(_tomWallet, _aliceWallet.Address, 37);
+        var second = _transactionService.CreateTransaction(_tomWallet, _aliceWallet.Address, 92);
 
-        var result = _chain.AddBlock(transactions);
+        second.Id = first.Id;
+        second.Singature = _tomWallet.Sign(second.GetDataToSign());
 
-        Assert.Equal((0, TransactionInvalidityReason.DuplicateId), result.Error);
+        var result = _chain.AddBlock([first, second]);
+
+        Assert.Equal((0, TransactionValidationError.DuplicateId), result.Error);
         Assert.Single(_chain.Chain);
     }
 }

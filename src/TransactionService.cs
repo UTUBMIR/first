@@ -1,35 +1,47 @@
 namespace First {
     public class TransactionService {
-        public enum TransactionInvalidityReason {
+        public enum TransactionValidationError {
             EmptySender,
             EmptyRecipient,
             InvalidAmount,
-            DuplicateId
+            DuplicateId,
+            EmptySignatureOrSenderPublicKey,
+            NonMatchingSignature
         }
 
-        public Transaction CreateTransaction(string from, string to, decimal amount) {
-            var transaction = new Transaction(from, to, amount);
+        private readonly WalletService _walletService = new WalletService();
 
-            if (ValidateTransaction(transaction).Verify(out var error)) {
-                return transaction;
-            }
-            else {
+        public Transaction CreateTransaction(Wallet sender, string to, decimal amount) {
+            var transaction = new Transaction(sender.Address, to, amount);
+            transaction.SenderPublicKey = sender.PublicKey;
+            transaction.Singature = sender.Sign(transaction.GetDataToSign());
+
+            if (!ValidateTransaction(transaction).Verify(out var error)) {
                 throw new ArgumentException(error.ToString());
             }
 
+            return transaction;
         }
 
-        public Failable<TransactionInvalidityReason> ValidateTransaction(Transaction transaction) {
+        public Failable<TransactionValidationError> ValidateTransaction(Transaction transaction) {
             if (string.IsNullOrEmpty(transaction.From)) {
-                return TransactionInvalidityReason.EmptySender;
+                return TransactionValidationError.EmptySender;
             }
 
             if (string.IsNullOrEmpty(transaction.To)) {
-                return TransactionInvalidityReason.EmptyRecipient;
+                return TransactionValidationError.EmptyRecipient;
             }
 
             if (transaction.Amount <= 0) {
-                return TransactionInvalidityReason.InvalidAmount;
+                return TransactionValidationError.InvalidAmount;
+            }
+
+            if (transaction.Singature == null || transaction.SenderPublicKey == null) {
+                return TransactionValidationError.EmptySignatureOrSenderPublicKey;
+            }
+
+            if (!_walletService.VerifySignature(transaction.GetDataToSign(), transaction.Singature, transaction.SenderPublicKey)) {
+                return TransactionValidationError.NonMatchingSignature;
             }
 
             return Result.Success();
