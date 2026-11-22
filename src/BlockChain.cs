@@ -13,6 +13,7 @@ namespace First {
         public int Difficulty { get; private set; }
         public List<Block> Chain { get; set; }
         private readonly HashingService _hashingService;
+        private readonly BalanceService _balanceService;
         private readonly MiningService _miningService;
         private readonly TransactionService _transactionService;
 
@@ -24,6 +25,7 @@ namespace First {
             Chain = new List<Block>();
             _hashingService = new HashingService();
             _miningService = new MiningService(singleThreaded, useGpu);
+            _balanceService = new BalanceService();
             _transactionService = new TransactionService();
             AddGenesisBlock();
         }
@@ -60,7 +62,7 @@ namespace First {
             return false;
         }
 
-        public Failable<(int transactionIndex, TransactionValidationError reason)> AddBlock(List<Transaction> transactions) {
+        public Failable<(int transactionIndex, TransactionValidationError reason)> AddBlock(List<Transaction> transactions, string minerAddress) {
             foreach (var (index, transaction) in transactions.Index()) {
                 var valid = _transactionService.ValidateTransaction(transaction);
 
@@ -69,12 +71,20 @@ namespace First {
                     return (index, valid.Error);
                 }
 
+                if (_balanceService.HasSufficientBalance(transaction.From, transaction.Amount, Chain, transactions.Where(t => t != transaction).ToList()) == false) {
+                    Extensions.WriteError($"Insufficient balance for transaction: \"{transaction}\"");
+                    return (index, TransactionValidationError.InsufficientBalance);
+                }
+
                 if (TransactionOrItsIdExists(transaction, index, transactions)) { // TODO: Combine verifications for all transactions in the block into a single loop
                     Extensions.WriteError($"Transaction with the same id already exists: \"{transaction.Id}\"");
                     return (index, TransactionValidationError.DuplicateId);
                 }
             }
             var transactionCopy = new List<Transaction>(transactions);
+
+            var coinbaseTransaction = Transaction.CreateCoinbaseTransaction(minerAddress, 50);
+            transactionCopy.Insert(0, coinbaseTransaction);
 
             var lastBlock = Chain[Chain.Count - 1];
 

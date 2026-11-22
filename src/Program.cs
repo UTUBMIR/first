@@ -21,40 +21,46 @@ var bobWallet = walletManager.CreateWallet("Bob").Value;
 var illyaWallet = walletManager.CreateWallet("Illya").Value;
 var tomWallet = walletManager.CreateWallet("Tom").Value;
 
+blockChain.AddBlock([], bobWallet.Address);
+blockChain.AddBlock([], illyaWallet.Address);
+blockChain.AddBlock([], illyaWallet.Address);
+blockChain.AddBlock([], aliceWallet.Address);
+
 var transactionPool = new List<Transaction> {
     transactionService.CreateTransaction(bobWallet, illyaWallet.Address, 4),
-    transactionService.CreateTransaction(aliceWallet, bobWallet.Address, 23),
-    transactionService.CreateTransaction(tomWallet, bobWallet.Address, 17),
+    transactionService.CreateTransaction(aliceWallet, tomWallet.Address, 23),
 };
 
-blockChain.AddBlock(transactionPool);
+
+blockChain.AddBlock(transactionPool, illyaWallet.Address);
 transactionPool.Clear();
 
 transactionPool.AddRange([
-    transactionService.CreateTransaction(illyaWallet, bobWallet.Address, 1),
-    transactionService.CreateTransaction(bobWallet, tomWallet.Address, 9),
+    transactionService.CreateTransaction(aliceWallet, bobWallet.Address, 1),
+    transactionService.CreateTransaction(bobWallet, tomWallet.Address, 19),
+    transactionService.CreateTransaction(tomWallet, bobWallet.Address, 16),
 ]);
 
-blockChain.AddBlock(transactionPool);
+blockChain.AddBlock(transactionPool, illyaWallet.Address);
 transactionPool.Clear();
 
 transactionPool.AddRange([
-    transactionService.CreateTransaction(tomWallet, aliceWallet.Address, 92),
+    transactionService.CreateTransaction(bobWallet, tomWallet.Address, 2),
     transactionService.CreateTransaction(illyaWallet, aliceWallet.Address, 83),
-    transactionService.CreateTransaction(tomWallet, illyaWallet.Address, 48),
+    transactionService.CreateTransaction(aliceWallet, illyaWallet.Address, 8),
     transactionService.CreateTransaction(bobWallet, aliceWallet.Address, 37),
 ]);
 
-blockChain.AddBlock(transactionPool);
+blockChain.AddBlock(transactionPool, aliceWallet.Address);
 transactionPool.Clear();
 
 transactionPool.AddRange([
-    transactionService.CreateTransaction(illyaWallet, tomWallet.Address, 430),
-    transactionService.CreateTransaction(aliceWallet, bobWallet.Address, 12),
+    transactionService.CreateTransaction(illyaWallet, tomWallet.Address, 43),
+    transactionService.CreateTransaction(illyaWallet, bobWallet.Address, 12),
     transactionService.CreateTransaction(illyaWallet, aliceWallet.Address, 53),
 ]);
 
-blockChain.AddBlock(transactionPool);
+blockChain.AddBlock(transactionPool, bobWallet.Address);
 transactionPool.Clear();
 
 
@@ -87,7 +93,8 @@ var menu = new Menu(
 
         "Display all wallets",
         "Create a new wallet",
-        "Search wallets\n",
+        "Search wallets",
+        "View wallet balance\n",
 
         "Mining Benchmark\n",
 
@@ -128,6 +135,7 @@ var menu = new Menu(
             }
             catch (Exception e) {
                 Extensions.WriteError($"Failed to add transaction: {e}");
+                Extensions.Pause();
                 return true;
             }
 
@@ -136,7 +144,7 @@ var menu = new Menu(
             return true;
         },
         () => {
-            blockChain.AddBlock(transactionPool);
+            blockChain.AddBlock(transactionPool, tomWallet.Address);
             transactionPool.Clear();
             Extensions.WriteSuccess("Block added");
             Extensions.Pause();
@@ -151,6 +159,21 @@ var menu = new Menu(
         () => actions.DisplayAllWallets(),
         () => actions.CreateNewWallet(),
         () => actions.SearchWallet(out _),
+        () => {
+            actions.SearchWallet(out var wallet);
+            if (wallet is null) {
+                Extensions.WriteError("No wallet selected");
+                Extensions.Pause();
+                return true;
+            }
+
+            var balance = new BalanceService().GetBalance(wallet.Address, blockChain.Chain);
+
+            Console.WriteLine($"Balance for \"{wallet.Name}\" is: {balance}");
+            Extensions.Pause();
+
+            return true;
+        },
 
         actions.MiningBenchmark,
 

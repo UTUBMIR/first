@@ -12,12 +12,19 @@ namespace First {
 
         public DateTime TimeStamp { get; set; }
 
+
+        public bool IsCoinbase { get; set; }
+
         public Transaction(string from, string to, decimal amount) {
             Id = Guid.NewGuid().ToString();
             From = from;
             To = to;
             Amount = amount;
             TimeStamp = DateTime.Now;
+        }
+
+        public static Transaction CreateCoinbaseTransaction(string to, decimal amount) {
+            return new Transaction("Coinbase", to, amount) { IsCoinbase = true };
         }
 
         public byte[] GetDataToSign() {

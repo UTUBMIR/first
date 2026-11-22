@@ -6,7 +6,8 @@ namespace First {
             InvalidAmount,
             DuplicateId,
             EmptySignatureOrSenderPublicKey,
-            NonMatchingSignature
+            NonMatchingSignature,
+            InsufficientBalance
         }
 
         private readonly WalletService _walletService = new WalletService();
@@ -24,16 +25,20 @@ namespace First {
         }
 
         public Failable<TransactionValidationError> ValidateTransaction(Transaction transaction) {
-            if (string.IsNullOrEmpty(transaction.From)) {
-                return TransactionValidationError.EmptySender;
-            }
-
             if (string.IsNullOrEmpty(transaction.To)) {
                 return TransactionValidationError.EmptyRecipient;
             }
 
             if (transaction.Amount <= 0) {
                 return TransactionValidationError.InvalidAmount;
+            }
+
+            if (transaction.IsCoinbase) {
+                return Result.Success();
+            }
+
+            if (string.IsNullOrEmpty(transaction.From)) {
+                return TransactionValidationError.EmptySender;
             }
 
             if (transaction.Singature == null || transaction.SenderPublicKey == null) {
