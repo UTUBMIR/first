@@ -29,6 +29,7 @@ namespace First {
             Console.WriteLine($"Difficulty: {block.DifficultyAtMining}");
             Console.WriteLine($"Hash: {block.Hash}");
             Console.WriteLine($"Nonce: {block.Nonce}");
+            Console.WriteLine($"Merkle: {block.MerkleRoot}");
             Console.WriteLine(sep);
         }
 

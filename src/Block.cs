@@ -8,6 +8,7 @@ namespace First {
         public string PreviousHash { get; set; } = string.Empty;
         public string Hash { get; set; } = string.Empty;
         public UInt64 Nonce { get; set; }
+        public string MerkleRoot { get; set; } = string.Empty;
         public double MiningDuration { get; set; }
         public int DifficultyAtMining { get; set; }
 
@@ -21,6 +22,7 @@ namespace First {
                 PreviousHash = PreviousHash,
                 Hash = Hash,
                 Nonce = Nonce,
+                MerkleRoot = MerkleRoot,
                 MiningDuration = MiningDuration,
                 DifficultyAtMining = DifficultyAtMining
             };
@@ -36,6 +38,7 @@ namespace First {
             if (!Transactions.SequenceEqual(other.Transactions)) return false;
             if (PreviousHash != other.PreviousHash) return false;
             if (DifficultyAtMining != other.DifficultyAtMining) return false;
+            if (MerkleRoot != other.MerkleRoot) return false;
 
             return true;
         }

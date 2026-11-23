@@ -5,7 +5,8 @@ namespace First {
     public enum BlockValidationError {
         Hash,
         PreviousHash,
-        DifficultyAtMining
+        DifficultyAtMining,
+        MerkleRoot
     }
 
 
@@ -42,6 +43,7 @@ namespace First {
                 PreviousHash = "0"
             };
 
+            genesisBlock.MerkleRoot = _hashingService.ComputeMerkleRoot(genesisBlock.Transactions);
             _miningService.MineBlock(genesisBlock, 1);
             Chain.Add(genesisBlock);
         }
@@ -125,6 +127,7 @@ namespace First {
                 PreviousHash = lastBlock.Hash
             };
 
+            newBlock.MerkleRoot = _hashingService.ComputeMerkleRoot(newBlock.Transactions);
             _miningService.MineBlock(newBlock, Difficulty);
             Chain.Add(newBlock);
             Mempool.RemoveTransactions(batch);
@@ -134,6 +137,25 @@ namespace First {
             }
 
             return Result.Success();
+        }
+
+        public Result<MerkleProof, string> GetMerkleProof(string transactionId) {
+            foreach (var block in Chain) {
+                var proof = _hashingService.GetMerkleProof(block.Transactions, transactionId);
+                if (proof is not null) {
+                    return Result.Success(proof);
+                }
+            }
+
+            return Result.Failure($"Transaction '{transactionId}' was not found in the chain.");
+        }
+
+        public bool VerifyMerkleProof(Transaction transaction, MerkleProof proof) {
+            return _hashingService.VerifyMerkleProof(transaction, proof);
+        }
+
+        public bool VerifyMerkleProof(Transaction transaction, MerkleProof proof, string expectedMerkleRoot) {
+            return _hashingService.VerifyMerkleProof(transaction, proof, expectedMerkleRoot);
         }
 
         public Block? GetBlockByIndex(int index) { // FIXME: Why int32?
@@ -166,6 +188,11 @@ namespace First {
 
                 if (!currentBlock.Hash.StartsWith(new string('0', currentBlock.DifficultyAtMining))) {
                     return (i, BlockValidationError.DifficultyAtMining);
+                }
+
+                var computedMerkleRoot = _hashingService.ComputeMerkleRoot(currentBlock.Transactions);
+                if (currentBlock.MerkleRoot != computedMerkleRoot) {
+                    return (i, BlockValidationError.MerkleRoot);
                 }
             }
             return Result.Success();
@@ -211,5 +238,6 @@ namespace First {
                 Console.WriteLine($"Difficulty decreased to {Difficulty}");
             }
         }
+
     }
 }

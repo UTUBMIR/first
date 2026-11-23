@@ -75,6 +75,8 @@ namespace First {
             Debug.Assert(block.Nonce == 0);
 
             block.DifficultyAtMining = difficulty;
+            // resync just in case
+            block.MerkleRoot = BlockHashing.ComputeMerkleRoot(block.Transactions);
 
             if (_gpuMiner is not null) {
                 var prefix = BlockHashing.EncodePrefix(block);
