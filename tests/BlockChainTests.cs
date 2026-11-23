@@ -33,9 +33,10 @@ public class BlockChainTests {
 
     [Fact]
     public void AddingBlock_KeepsChainValid() {
-        // Fund Alice first: AddBlock rejects transactions from addresses with no balance.
-        Assert.True(_chain.AddBlock([], _aliceWallet.Address).IsSuccess);
-        Assert.True(_chain.AddBlock([_transactionService.CreateTransaction(_aliceWallet, _bobWallet.Address, 10)], _tomWallet.Address).IsSuccess);
+        // Fund Alice first: mining rejects transactions from addresses with no balance.
+        Assert.True(_chain.MinePending(_aliceWallet.Address).IsSuccess);
+        Assert.True(_chain.AddTransactions([_transactionService.CreateTransaction(_aliceWallet, _bobWallet.Address, 10)]).IsSuccess);
+        Assert.True(_chain.MinePending(_tomWallet.Address).IsSuccess);
 
         Assert.Equal(50, _balanceService.GetBalance(_tomWallet.Address, _chain.Chain)); // mining reward
         Assert.Equal(3, _chain.Chain.Count);
@@ -45,8 +46,9 @@ public class BlockChainTests {
 
     [Fact]
     public void ModifyingBlockData_InvalidatesChain() {
-        Assert.True(_chain.AddBlock([], _aliceWallet.Address).IsSuccess);
-        Assert.True(_chain.AddBlock([_transactionService.CreateTransaction(_aliceWallet, _bobWallet.Address, 10)], _tomWallet.Address).IsSuccess);
+        Assert.True(_chain.MinePending(_aliceWallet.Address).IsSuccess);
+        Assert.True(_chain.AddTransactions([_transactionService.CreateTransaction(_aliceWallet, _bobWallet.Address, 10)]).IsSuccess);
+        Assert.True(_chain.MinePending(_tomWallet.Address).IsSuccess);
 
         Assert.Equal(50, _balanceService.GetBalance(_tomWallet.Address, _chain.Chain)); // mining reward
 
@@ -60,8 +62,9 @@ public class BlockChainTests {
 
     [Fact]
     public void ModifyingPreviousHash_InvalidatesChain() {
-        Assert.True(_chain.AddBlock([], _aliceWallet.Address).IsSuccess);
-        Assert.True(_chain.AddBlock([_transactionService.CreateTransaction(_aliceWallet, _bobWallet.Address, 10)], _tomWallet.Address).IsSuccess);
+        Assert.True(_chain.MinePending(_aliceWallet.Address).IsSuccess);
+        Assert.True(_chain.AddTransactions([_transactionService.CreateTransaction(_aliceWallet, _bobWallet.Address, 10)]).IsSuccess);
+        Assert.True(_chain.MinePending(_tomWallet.Address).IsSuccess);
 
         Assert.Equal(50, _balanceService.GetBalance(_tomWallet.Address, _chain.Chain)); // mining reward
 
@@ -75,13 +78,17 @@ public class BlockChainTests {
 
     [Fact]
     public void ModifyingBlockAndReMiningIt_InvalidatesChain() {
-        // Fund Alice and Bob first: AddBlock rejects transactions from addresses with no balance.
-        Assert.True(_chain.AddBlock([], _aliceWallet.Address).IsSuccess);
-        Assert.True(_chain.AddBlock([], _bobWallet.Address).IsSuccess);
-        Assert.True(_chain.AddBlock([_transactionService.CreateTransaction(_aliceWallet, _bobWallet.Address, 10)], _tomWallet.Address).IsSuccess);
-        Assert.True(_chain.AddBlock([_transactionService.CreateTransaction(_bobWallet, _aliceWallet.Address, 7)], _tomWallet.Address).IsSuccess);
-        Assert.True(_chain.AddBlock([_transactionService.CreateTransaction(_aliceWallet, _bobWallet.Address, 19)], _tomWallet.Address).IsSuccess);
-        Assert.True(_chain.AddBlock([_transactionService.CreateTransaction(_bobWallet, _aliceWallet.Address, 23)], _tomWallet.Address).IsSuccess);
+        // Fund Alice and Bob first: mining rejects transactions from addresses with no balance.
+        Assert.True(_chain.MinePending(_aliceWallet.Address).IsSuccess);
+        Assert.True(_chain.MinePending(_bobWallet.Address).IsSuccess);
+        Assert.True(_chain.AddTransactions([_transactionService.CreateTransaction(_aliceWallet, _bobWallet.Address, 10)]).IsSuccess);
+        Assert.True(_chain.MinePending(_tomWallet.Address).IsSuccess);
+        Assert.True(_chain.AddTransactions([_transactionService.CreateTransaction(_bobWallet, _aliceWallet.Address, 7)]).IsSuccess);
+        Assert.True(_chain.MinePending(_tomWallet.Address).IsSuccess);
+        Assert.True(_chain.AddTransactions([_transactionService.CreateTransaction(_aliceWallet, _bobWallet.Address, 19)]).IsSuccess);
+        Assert.True(_chain.MinePending(_tomWallet.Address).IsSuccess);
+        Assert.True(_chain.AddTransactions([_transactionService.CreateTransaction(_bobWallet, _aliceWallet.Address, 23)]).IsSuccess);
+        Assert.True(_chain.MinePending(_tomWallet.Address).IsSuccess);
 
         Assert.Equal(200, _balanceService.GetBalance(_tomWallet.Address, _chain.Chain)); // mining reward
 
@@ -110,10 +117,14 @@ public class BlockChainTests {
 
     [Fact]
     public void InvalidTransactionSender_RejectsBlock() {
-        var result = _chain.AddBlock([
-            new Transaction("", _aliceWallet.Address, 37), // creating transaction manually to avoid validation from transactionService
-            new Transaction(_tomWallet.Address, _aliceWallet.Address, 92)
-        ], _tomWallet.Address);
+        var invalid = _transactionService.CreateTransaction(_tomWallet, _aliceWallet.Address, 37);
+        var valid = _transactionService.CreateTransaction(_tomWallet, _aliceWallet.Address, 92);
+
+        Assert.True(_chain.AddTransactions([invalid, valid]).IsSuccess);
+
+        invalid.From = ""; // mutate after adding to bypass mempool validation and exercise block validation
+
+        var result = _chain.MinePending(_tomWallet.Address);
 
         Assert.Equal(0, _balanceService.GetBalance(_tomWallet.Address, _chain.Chain)); // mining reward
 
@@ -123,18 +134,20 @@ public class BlockChainTests {
 
     [Fact]
     public void TransactionWithDuplicateId_RejectsBlock() {
-        Assert.True(_chain.AddBlock([], _tomWallet.Address).IsSuccess);
-        Assert.True(_chain.AddBlock([], _tomWallet.Address).IsSuccess);
-        Assert.True(_chain.AddBlock([], _tomWallet.Address).IsSuccess);
+        Assert.True(_chain.MinePending(_tomWallet.Address).IsSuccess);
+        Assert.True(_chain.MinePending(_tomWallet.Address).IsSuccess);
+        Assert.True(_chain.MinePending(_tomWallet.Address).IsSuccess);
         Assert.Equal(150, _balanceService.GetBalance(_tomWallet.Address, _chain.Chain)); // mining reward
 
         var first = _transactionService.CreateTransaction(_tomWallet, _aliceWallet.Address, 37);
         var second = _transactionService.CreateTransaction(_tomWallet, _aliceWallet.Address, 92);
 
-        second.Id = first.Id;
+        Assert.True(_chain.AddTransactions([first, second]).IsSuccess);
+
+        second.Id = first.Id; // mutate after adding to bypass mempool duplicate validation
         second.Singature = _tomWallet.Sign(second.GetDataToSign());
 
-        var result = _chain.AddBlock([first, second], _tomWallet.Address);
+        var result = _chain.MinePending(_tomWallet.Address);
 
         Assert.Equal(150, _balanceService.GetBalance(_tomWallet.Address, _chain.Chain)); // mining reward
 

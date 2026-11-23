@@ -16,6 +16,8 @@ namespace First {
         private readonly BalanceService _balanceService;
         private readonly MiningService _miningService;
         private readonly TransactionService _transactionService;
+        public Mempool Mempool { get; private set; } = new Mempool();
+        public int MaxTransactionsPerBock { get; private set; } = 3;
 
         public readonly double _targetBlockTime = 3;
         public readonly int _adjustmentInterval = 2;
@@ -44,7 +46,7 @@ namespace First {
             Chain.Add(genesisBlock);
         }
 
-        private bool TransactionOrItsIdExists(Transaction transaction, int transactionLocalIndex, List<Transaction> localTransactions) {
+        private bool DuplicateTransactionId(Transaction transaction) {
             foreach (var block in Chain) { // WARNING: Use a parallel loop if needed in the future
                 foreach (var t in block.Transactions) {
                     if (t.Id == transaction.Id) {
@@ -52,6 +54,12 @@ namespace First {
                     }
                 }
             }
+            return false;
+        }
+
+        private bool TransactionOrItsIdExists(Transaction transaction, int transactionLocalIndex, List<Transaction> localTransactions) {
+            if (DuplicateTransactionId(transaction)) return true;
+
             foreach (var (i, t) in localTransactions.Index()) {
                 if (transactionLocalIndex == i) continue;
 
@@ -62,8 +70,31 @@ namespace First {
             return false;
         }
 
-        public Failable<(int transactionIndex, TransactionValidationError reason)> AddBlock(List<Transaction> transactions, string minerAddress) {
-            foreach (var (index, transaction) in transactions.Index()) {
+        public Failable<string> AddTransaction(Transaction transaction) {
+            if (DuplicateTransactionId(transaction)) {
+                return TransactionValidationError.DuplicateId.ToString();
+            }
+
+            if (!Mempool.AddTransaction(transaction).Verify(out var reason)) {
+                return reason.ToString();
+            }
+
+            return Result.Success();
+        }
+
+        public Failable<(int index, string reason)> AddTransactions(IEnumerable<Transaction> transactions) {
+            foreach (var (i, t) in transactions.Index()) {
+                if (!AddTransaction(t).Verify(out var reason)) {
+                    return (i, reason);
+                }
+            }
+            return Result.Success();
+        }
+
+        public Failable<(int transactionIndex, TransactionValidationError reason)> MinePending(string minerAddress) {
+            var batch = Mempool.Peek(MaxTransactionsPerBock);
+
+            foreach (var (index, transaction) in batch.Index()) {
                 var valid = _transactionService.ValidateTransaction(transaction);
 
                 if (valid.IsFailure) {
@@ -71,32 +102,32 @@ namespace First {
                     return (index, valid.Error);
                 }
 
-                if (_balanceService.HasSufficientBalance(transaction.From, transaction.Amount, Chain, transactions.Where(t => t != transaction).ToList()) == false) {
+                if (_balanceService.HasSufficientBalance(transaction.From, transaction.Amount, Chain, batch.Where(t => t != transaction).ToList()) == false) {
                     Extensions.WriteError($"Insufficient balance for transaction: \"{transaction}\"");
                     return (index, TransactionValidationError.InsufficientBalance);
                 }
 
-                if (TransactionOrItsIdExists(transaction, index, transactions)) { // TODO: Combine verifications for all transactions in the block into a single loop
+                if (TransactionOrItsIdExists(transaction, index, batch)) { // TODO: Combine verifications for all transactions in the block into a single loop
                     Extensions.WriteError($"Transaction with the same id already exists: \"{transaction.Id}\"");
                     return (index, TransactionValidationError.DuplicateId);
                 }
             }
-            var transactionCopy = new List<Transaction>(transactions);
 
             var coinbaseTransaction = Transaction.CreateCoinbaseTransaction(minerAddress, 50);
-            transactionCopy.Insert(0, coinbaseTransaction);
+            batch.Insert(0, coinbaseTransaction);
 
             var lastBlock = Chain[Chain.Count - 1];
 
             var newBlock = new Block {
                 Index = lastBlock.Index + 1,
                 TimeStamp = DateTime.UtcNow,
-                Transactions = transactionCopy,
+                Transactions = batch,
                 PreviousHash = lastBlock.Hash
             };
 
             _miningService.MineBlock(newBlock, Difficulty);
             Chain.Add(newBlock);
+            Mempool.RemoveTransactions(batch);
 
             if (newBlock.Index % _adjustmentInterval == 0) {
                 AdjustDifficulty();

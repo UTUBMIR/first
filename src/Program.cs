@@ -21,47 +21,44 @@ var bobWallet = walletManager.CreateWallet("Bob").Value;
 var illyaWallet = walletManager.CreateWallet("Illya").Value;
 var tomWallet = walletManager.CreateWallet("Tom").Value;
 
-blockChain.AddBlock([], bobWallet.Address);
-blockChain.AddBlock([], illyaWallet.Address);
-blockChain.AddBlock([], illyaWallet.Address);
-blockChain.AddBlock([], aliceWallet.Address);
+blockChain.MinePending(bobWallet.Address);
+blockChain.MinePending(illyaWallet.Address);
+blockChain.MinePending(illyaWallet.Address);
+blockChain.MinePending(aliceWallet.Address);
 
-var transactionPool = new List<Transaction> {
+blockChain.AddTransactions([
     transactionService.CreateTransaction(bobWallet, illyaWallet.Address, 4),
     transactionService.CreateTransaction(aliceWallet, tomWallet.Address, 23),
-};
+]);
 
 
-blockChain.AddBlock(transactionPool, illyaWallet.Address);
-transactionPool.Clear();
+blockChain.MinePending(illyaWallet.Address);
 
-transactionPool.AddRange([
+blockChain.AddTransactions([
     transactionService.CreateTransaction(aliceWallet, bobWallet.Address, 1),
     transactionService.CreateTransaction(bobWallet, tomWallet.Address, 19),
     transactionService.CreateTransaction(tomWallet, bobWallet.Address, 16),
 ]);
 
-blockChain.AddBlock(transactionPool, illyaWallet.Address);
-transactionPool.Clear();
+blockChain.MinePending(illyaWallet.Address);
 
-transactionPool.AddRange([
+blockChain.AddTransactions([
     transactionService.CreateTransaction(bobWallet, tomWallet.Address, 2),
     transactionService.CreateTransaction(illyaWallet, aliceWallet.Address, 83),
     transactionService.CreateTransaction(aliceWallet, illyaWallet.Address, 8),
     transactionService.CreateTransaction(bobWallet, aliceWallet.Address, 37),
 ]);
 
-blockChain.AddBlock(transactionPool, aliceWallet.Address);
-transactionPool.Clear();
+blockChain.MinePending(aliceWallet.Address);
+blockChain.MinePending(aliceWallet.Address);
 
-transactionPool.AddRange([
+blockChain.AddTransactions([
     transactionService.CreateTransaction(illyaWallet, tomWallet.Address, 43),
     transactionService.CreateTransaction(illyaWallet, bobWallet.Address, 12),
     transactionService.CreateTransaction(illyaWallet, aliceWallet.Address, 53),
 ]);
 
-blockChain.AddBlock(transactionPool, bobWallet.Address);
-transactionPool.Clear();
+blockChain.MinePending(bobWallet.Address);
 
 
 
@@ -83,6 +80,7 @@ var menu = new Menu(
     [
         "Get block by index",
         "Display difficulty history",
+        "Display mempool",
         "Display whole chain\n",
 
         "Search transaction by id",
@@ -103,6 +101,12 @@ var menu = new Menu(
     [
         actions.GetBlockByIndex,
         actions.DisplayDifficultyHistory,
+        () => {
+            displayService.DisplayMempool(blockChain.Mempool);
+            Extensions.Pause();
+
+            return true;
+        },
         actions.DisplayChain,
 
         actions.SearchTransactionById,
@@ -131,7 +135,7 @@ var menu = new Menu(
             Console.WriteLine($"Amount: {amount}\n");
 
             try {
-                transactionPool.Add(transactionService.CreateTransaction(senderWallet, receiverWallet.Address, amount));
+                blockChain.AddTransaction(transactionService.CreateTransaction(senderWallet, receiverWallet.Address, amount));
             }
             catch (Exception e) {
                 Extensions.WriteError($"Failed to add transaction: {e}");
@@ -144,8 +148,7 @@ var menu = new Menu(
             return true;
         },
         () => {
-            blockChain.AddBlock(transactionPool, tomWallet.Address);
-            transactionPool.Clear();
+            blockChain.MinePending(tomWallet.Address);
             Extensions.WriteSuccess("Block added");
             Extensions.Pause();
             return true;

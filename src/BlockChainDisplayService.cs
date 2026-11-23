@@ -38,5 +38,14 @@ namespace First {
             // no attempts outout since miner is multithreaded
             Console.WriteLine(sep);
         }
+
+        public void DisplayMempool(Mempool mempool) {
+            Console.WriteLine("Mempool:");
+
+            foreach (var tx in mempool.PendingTransactions) {
+                Console.WriteLine($"  - {tx.ToRawString()}");
+            }
+            Console.WriteLine(new string('-', 50));
+        }
     }
 }
