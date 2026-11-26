@@ -6,7 +6,9 @@ namespace First {
         Hash,
         PreviousHash,
         DifficultyAtMining,
-        MerkleRoot
+        MerkleRoot,
+        NonEmptyGenesisBlock,
+        InvalidTransactions // block contains invalid transactions (e.g., invalid coinbase amount)
     }
 
 
@@ -22,6 +24,7 @@ namespace First {
 
         public readonly double _targetBlockTime = 3;
         public readonly int _adjustmentInterval = 2;
+        private readonly decimal _minerReward = 50;
 
         public BlockChain(int difficulty = 4, bool singleThreaded = false, bool useGpu = true) {
             Difficulty = difficulty;
@@ -73,8 +76,18 @@ namespace First {
         }
 
         public Failable<string> AddTransaction(Transaction transaction) {
+            if (transaction.IsCoinbase || transaction.From == "Coinbase") {
+                return Result.Failure("Invalid Coinbase usage");
+            }
+
             if (DuplicateTransactionId(transaction)) {
                 return TransactionValidationError.DuplicateId.ToString();
+            }
+
+            if (!_balanceService.HasSufficientBalance(transaction.From, transaction.Amount, Chain, Mempool.PendingTransactions.ToList())) {
+                var msg = $"Insufficient balance for transaction {transaction}";
+                Extensions.WriteError(msg);
+                return Result.Failure(msg);
             }
 
             if (!Mempool.AddTransaction(transaction).Verify(out var reason)) {
@@ -94,7 +107,7 @@ namespace First {
         }
 
         public Failable<(int transactionIndex, TransactionValidationError reason)> MinePending(string minerAddress) {
-            var batch = Mempool.Peek(MaxTransactionsPerBock);
+            var batch = Mempool.Peek(MaxTransactionsPerBock - 1);
 
             foreach (var (index, transaction) in batch.Index()) {
                 var valid = _transactionService.ValidateTransaction(transaction);
@@ -115,7 +128,7 @@ namespace First {
                 }
             }
 
-            var coinbaseTransaction = Transaction.CreateCoinbaseTransaction(minerAddress, 50);
+            var coinbaseTransaction = Transaction.CreateCoinbaseTransaction(minerAddress, _minerReward);
             batch.Insert(0, coinbaseTransaction);
 
             var lastBlock = Chain[Chain.Count - 1];
@@ -126,6 +139,10 @@ namespace First {
                 Transactions = batch,
                 PreviousHash = lastBlock.Hash
             };
+
+            if (!ValidateBlockTransactions(newBlock, Chain)) {
+                return (-1, TransactionValidationError.Unknown);
+            }
 
             newBlock.MerkleRoot = _hashingService.ComputeMerkleRoot(newBlock.Transactions);
             _miningService.MineBlock(newBlock, Difficulty);
@@ -194,6 +211,16 @@ namespace First {
                 if (currentBlock.MerkleRoot != computedMerkleRoot) {
                     return (i, BlockValidationError.MerkleRoot);
                 }
+
+                if (i == 0) {
+                    if (currentBlock.Transactions.Count != 0 || currentBlock.DifficultyAtMining != 1) {
+                        return (i, BlockValidationError.NonEmptyGenesisBlock);
+                    }
+                }
+
+                if (!ValidateBlockTransactions(currentBlock, Chain.Take(i).ToList())) {
+                    return (i, BlockValidationError.InvalidTransactions);
+                }
             }
             return Result.Success();
         }
@@ -201,20 +228,33 @@ namespace First {
         public int RepairChain(int startIndex) {
             // Debug.Assert(IsChainValid() == false);
             int reMinedBlocks = 0;
-            for (int i = startIndex + 1; i < Chain.Count; ++i) {
+            // Start from startIndex to also handle the block at startIndex if it has invalid transactions
+            for (int i = startIndex; i < Chain.Count; ++i) {
                 var currentBlock = Chain[i];
-                var previousBlock = Chain[i - 1];
+                var previousBlock = i > startIndex ? Chain[i - 1] : null;
 
 
-                if (previousBlock.Hash != _hashingService.ComputeHash(previousBlock) || !previousBlock.Hash.StartsWith(new string('0', previousBlock.DifficultyAtMining))) {
+                if (previousBlock != null && (previousBlock.Hash != _hashingService.ComputeHash(previousBlock) || !previousBlock.Hash.StartsWith(new string('0', previousBlock.DifficultyAtMining)))) {
                     previousBlock.Nonce = 0;
                     _miningService.MineBlock(previousBlock, previousBlock.DifficultyAtMining);
                     ++reMinedBlocks;
                 }
 
 
-                if (currentBlock.PreviousHash != previousBlock.Hash) {
-                    currentBlock.PreviousHash = previousBlock.Hash;
+                if (currentBlock.PreviousHash != (previousBlock?.Hash ?? currentBlock.PreviousHash)) {
+                    currentBlock.PreviousHash = previousBlock?.Hash ?? currentBlock.PreviousHash;
+                    currentBlock.Nonce = 0;
+                    _miningService.MineBlock(currentBlock, currentBlock.DifficultyAtMining);
+                    ++reMinedBlocks;
+                }
+
+                if (!ValidateBlockTransactions(currentBlock, Chain.Take(i).ToList())) {
+                    var existingCoinbase = currentBlock.Transactions[0];
+                    var coinbaseTo = existingCoinbase.To;
+                    // Replace the coinbase transaction with a valid one (correct reward amount)
+                    var validCoinbase = Transaction.CreateCoinbaseTransaction(coinbaseTo, _minerReward);
+                    currentBlock.Transactions[0] = validCoinbase;
+                    currentBlock.MerkleRoot = _hashingService.ComputeMerkleRoot(currentBlock.Transactions);
                     currentBlock.Nonce = 0;
                     _miningService.MineBlock(currentBlock, currentBlock.DifficultyAtMining);
                     ++reMinedBlocks;
@@ -239,5 +279,45 @@ namespace First {
             }
         }
 
+        public bool ValidateBlockTransactions(Block block, List<Block> chainHistory) {
+            if (block.Transactions == null || block.Transactions.Count > MaxTransactionsPerBock || block.Transactions.Count == 0) {
+                return false;
+            }
+
+            var rewardTransaction = block.Transactions.FirstOrDefault();
+            if (rewardTransaction is null ||
+                !rewardTransaction.IsCoinbase ||
+                rewardTransaction.Amount != _minerReward ||
+                string.IsNullOrWhiteSpace(rewardTransaction.To)) {
+
+                return false;
+            }
+
+            var ids = chainHistory
+                .SelectMany(b => b.Transactions)
+                .Select(t => t.Id)
+                .ToHashSet();
+            var accepted = new List<Transaction>();
+
+            foreach (var transaction in block.Transactions.Skip(1)) {
+                if (transaction.IsCoinbase) return false;
+
+                if (ids.Contains(transaction.Id))
+                    return false;
+
+                var validateResult = _transactionService.ValidateTransaction(transaction);
+                if (validateResult.IsFailure) {
+                    return false;
+                }
+
+                if (!_balanceService.HasSufficientBalance(transaction.From, transaction.Amount, chainHistory, accepted)) {
+                    return false;
+                }
+
+                accepted.Add(transaction);
+            }
+
+            return true;
+        }
     }
 }

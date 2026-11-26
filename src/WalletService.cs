@@ -6,7 +6,7 @@ namespace First {
             using var ecdsa = ECDsa.Create();
             var privateKey = ecdsa.ExportECPrivateKey();
             var publicKey = ecdsa.ExportSubjectPublicKeyInfo();
-            var address = Convert.ToBase64String(publicKey)[^10..];
+            var address = GetAddress(publicKey);
 
             return new Wallet(name, address, publicKey, privateKey);
         }
@@ -16,6 +16,10 @@ namespace First {
             ecdsa.ImportSubjectPublicKeyInfo(publicKey, out _);
 
             return ecdsa.VerifyData(data, signature, HashAlgorithmName.SHA256);
+        }
+
+        public string GetAddress(byte[] publicKey) {
+            return Convert.ToBase64String(publicKey)[^10..];
         }
     }
 }

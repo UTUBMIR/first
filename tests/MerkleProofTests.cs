@@ -35,7 +35,7 @@ public class MerkleProofTests {
         var proof = chain.GetMerkleProof(transaction.Id);
 
         Assert.True(proof.IsSuccess);
-        Assert.Equal(2, proof.Value.Steps.Count);
+        Assert.Single(proof.Value.Steps);
         Assert.True(chain.VerifyMerkleProof(transaction, proof.Value));
     }
 

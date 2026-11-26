@@ -7,7 +7,9 @@ namespace First {
             DuplicateId,
             EmptySignatureOrSenderPublicKey,
             NonMatchingSignature,
-            InsufficientBalance
+            InsufficientBalance,
+            PublicKeyNotMatchingSender,
+            Unknown // FIXME: unfold reasons
         }
 
         private readonly WalletService _walletService = new WalletService();
@@ -43,6 +45,10 @@ namespace First {
 
             if (transaction.Singature == null || transaction.SenderPublicKey == null) {
                 return TransactionValidationError.EmptySignatureOrSenderPublicKey;
+            }
+
+            if (_walletService.GetAddress(transaction.SenderPublicKey) != transaction.From) {
+                return TransactionValidationError.PublicKeyNotMatchingSender;
             }
 
             if (!_walletService.VerifySignature(transaction.GetDataToSign(), transaction.Singature, transaction.SenderPublicKey)) {

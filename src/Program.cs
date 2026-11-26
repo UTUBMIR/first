@@ -46,7 +46,7 @@ blockChain.AddTransactions([
     transactionService.CreateTransaction(bobWallet, tomWallet.Address, 2),
     transactionService.CreateTransaction(illyaWallet, aliceWallet.Address, 83),
     transactionService.CreateTransaction(aliceWallet, illyaWallet.Address, 8),
-    transactionService.CreateTransaction(bobWallet, aliceWallet.Address, 37),
+    transactionService.CreateTransaction(bobWallet, aliceWallet.Address, 17),
 ]);
 
 blockChain.MinePending(aliceWallet.Address);
@@ -154,7 +154,14 @@ var menu = new Menu(
             return true;
         },
         () => {
-            Extensions.WriteSuccess($"Is Valid: {blockChain.IsChainValid()}");
+            var result = blockChain.FindFirstInvalidBlock();
+            if (result.Verify(out var error)) {
+                Extensions.WriteSuccess("The chain is valid");
+            }
+            else {
+                Extensions.WriteError($"The chain is invalid because of block at index \"{error.blockIndex}\" and reason: {error.reason}");
+            }
+
             Extensions.Pause();
             return true;
         },
