@@ -94,6 +94,10 @@ var menu = new Menu(
         "Search wallets",
         "View wallet balance\n",
 
+        "Verify transaction by id",
+        "Show transaction verification report",
+        "Run transaction security demo\n",
+
         "Mining Benchmark\n",
 
         "Exit"
@@ -111,42 +115,7 @@ var menu = new Menu(
 
         actions.SearchTransactionById,
         actions.SearchUserOccurences,
-        () => {
-            actions.SearchWallet(out var senderWallet, "Select sender-wallet: ");
-            if (senderWallet is null) {
-                Extensions.WriteError("No sender was selected");
-                Extensions.Pause();
-                return true;
-            }
-
-            actions.SearchWallet(out var receiverWallet, "Select reciever-wallet: "); // Using wallet for simplicity, we don't actually need the wallet of the reciever - only his address
-            if (receiverWallet is null) {
-                Extensions.WriteError("No reciever was selected");
-                Extensions.Pause();
-                return true;
-            }
-
-            Console.Clear();
-            var amount = Extensions.GetNumber("Enter amount: ", "Error: Amount cannot be negative!", [0, int.MaxValue]);
-
-            Console.Clear();
-            Console.WriteLine($"Sender: {senderWallet!.Name,-8} : {senderWallet.Address}");
-            Console.WriteLine($"Reciever: {receiverWallet!.Name,-6} : {receiverWallet.Address}");
-            Console.WriteLine($"Amount: {amount}\n");
-
-            try {
-                blockChain.AddTransaction(transactionService.CreateTransaction(senderWallet, receiverWallet.Address, amount));
-            }
-            catch (Exception e) {
-                Extensions.WriteError($"Failed to add transaction: {e}");
-                Extensions.Pause();
-                return true;
-            }
-
-            Extensions.WriteSuccess("Transaction added");
-            Extensions.Pause();
-            return true;
-        },
+        actions.AddTransaction,
         () => {
             blockChain.MinePending(tomWallet.Address);
             Extensions.WriteSuccess("Block added");
@@ -184,6 +153,10 @@ var menu = new Menu(
 
             return true;
         },
+
+        actions.VerifyTransactionById,
+        actions.DisplayVerificationReport,
+        actions.RunSecurityDemo,
 
         actions.MiningBenchmark,
 

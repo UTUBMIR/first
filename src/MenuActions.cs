@@ -1,10 +1,13 @@
 using System.Diagnostics;
+using static First.TransactionService;
 
 namespace First {
     public sealed class MenuActions {
         private readonly BlockChain _blockChain;
         private readonly BlockChainDisplayService _displayService;
         private readonly WalletManager _walletManager;
+        private readonly TransactionService _transactionService = new();
+        private readonly TransactionVerificationService _verificationService = new();
 
         public MenuActions(BlockChain blockChain, BlockChainDisplayService displayService, WalletManager walletManager) {
             _blockChain = blockChain;
@@ -66,7 +69,159 @@ namespace First {
             return true;
         }
 
-        public bool SearchUserOccurences() { // TODO: move this to a separate Extensions method, probably merge with Extensions.AskForWord
+        public bool VerifyTransactionById() {
+            Console.Clear();
+
+            var transactions = _blockChain.Chain
+                .SelectMany(b => b.Transactions)
+                .Concat(_blockChain.Mempool.PendingTransactions)
+                .ToList();
+
+            if (transactions.Count == 0) {
+                Extensions.WriteError("There are no transactions to verify.");
+                Extensions.Pause();
+                return true;
+            }
+
+            var transaction = Extensions.AskForItem(
+                transactions,
+                "Search transaction to verify: ",
+                "Type to search transaction by id...\n",
+                t => Console.WriteLine($"{t.Id} : {t.From} -> {t.To} : {t.Amount}"),
+                [t => t.Id]);
+
+            if (transaction is null) {
+                Extensions.WriteError("No transaction selected.");
+                Extensions.Pause();
+                return true;
+            }
+
+            Console.WriteLine();
+            Console.WriteLine(transaction);
+            Console.WriteLine();
+
+            PrintVerification("Result", _verificationService.Verify(transaction));
+            Extensions.Pause();
+            return true;
+        }
+
+        public bool DisplayVerificationReport() {
+            Console.Clear();
+            var report = _verificationService.GetReport();
+
+            Console.WriteLine("Transaction verification report\n");
+            Console.WriteLine($"Total checked : {report.Total}");
+            Console.WriteLine($"Accepted      : {report.Accepted}");
+            Console.WriteLine($"Rejected      : {report.Rejected}");
+            Console.WriteLine();
+
+            Extensions.Pause();
+            return true;
+        }
+
+        public bool RunSecurityDemo() {
+            Console.Clear();
+            Console.WriteLine("Transaction security demo\n");
+
+            var demoChain = new BlockChain(difficulty: 1, singleThreaded: true, useGpu: false);
+            var demoWallets = new WalletManager();
+            var demoTransactions = new TransactionService();
+            var demoVerifier = new TransactionVerificationService();
+
+            var alice = demoWallets.CreateWallet("Alice").Value;
+            var bob = demoWallets.CreateWallet("Bob").Value;
+            var tom = demoWallets.CreateWallet("Tom").Value;
+
+            Console.WriteLine($"Wallets created: Alice={alice.Address}, Bob={bob.Address}, Tom={tom.Address}");
+            var foundAlice = demoWallets.Wallets.FirstOrDefault(w => w.Address == alice.Address);
+            Console.WriteLine($"Search by address {alice.Address}: {(foundAlice is null ? "not found" : foundAlice.Name)}");
+            Console.WriteLine($"Public key maps to Alice's address: {new WalletService().GetAddress(alice.PublicKey) == alice.Address}\n");
+
+            demoChain.MinePending(alice.Address); // give Alice coins so her transactions can be accepted
+
+            var genuine = demoTransactions.CreateTransaction(alice, bob.Address, 10);
+            PrintVerification("Genuine Alice transaction", demoVerifier.Verify(genuine));
+
+            if (demoChain.AddTransaction(genuine).IsSuccess) {
+                demoChain.MinePending(bob.Address);
+            }
+
+            var inBlockchain = demoChain.Chain
+                .SelectMany(b => b.Transactions)
+                .Any(t => t.Id == genuine.Id);
+            Console.WriteLine($"Genuine transaction stored in Blockchain: {inBlockchain}\n");
+
+            var changedAmount = demoTransactions.CreateTransaction(alice, bob.Address, 10);
+            changedAmount.Amount = 11;
+            PrintVerification("Changed amount after signing", demoVerifier.Verify(changedAmount));
+
+            var changedRecipient = demoTransactions.CreateTransaction(alice, bob.Address, 10);
+            changedRecipient.To = tom.Address;
+            PrintVerification("Changed recipient after signing", demoVerifier.Verify(changedRecipient));
+
+            var missingSignature = demoTransactions.CreateTransaction(alice, bob.Address, 10);
+            missingSignature.Singature = null;
+            PrintVerification("Missing signature", demoVerifier.Verify(missingSignature));
+
+            var forgedOwner = new Transaction(alice.Address, bob.Address, 10) {
+                SenderPublicKey = bob.PublicKey
+            };
+            forgedOwner.Singature = bob.Sign(forgedOwner.GetDataToSign());
+            PrintVerification("Bob claims Alice's address (Bob's public key)", demoVerifier.Verify(forgedOwner));
+
+            var forgedSignature = new Transaction(alice.Address, bob.Address, 10) {
+                SenderPublicKey = alice.PublicKey
+            };
+            forgedSignature.Singature = bob.Sign(forgedSignature.GetDataToSign());
+            PrintVerification("Bob uses Alice's public key but Bob's signature", demoVerifier.Verify(forgedSignature));
+
+            Console.WriteLine("\nAttempting to add invalid transactions to the Blockchain:");
+            (string Label, Transaction Transaction)[] invalidTransactions = [
+                ("Changed amount", changedAmount),
+                ("Changed recipient", changedRecipient),
+                ("Missing signature", missingSignature),
+                ("Forged owner (Bob's public key)", forgedOwner),
+                ("Forged owner (Bob's signature)", forgedSignature)
+            ];
+
+            foreach (var (label, transaction) in invalidTransactions) {
+                var result = demoChain.AddTransaction(transaction);
+                if (result.IsSuccess) {
+                    Extensions.WriteError($"{label}: unexpectedly accepted!");
+                }
+                else {
+                    Extensions.WriteSuccess($"{label}: rejected ({result.Error})");
+                }
+            }
+
+            var report = demoVerifier.GetReport();
+            Console.WriteLine($"\nReport: checked {report.Total}, accepted {report.Accepted}, rejected {report.Rejected}");
+            Extensions.Pause();
+            return true;
+        }
+
+        private static void PrintVerification(string label, Failable<TransactionValidationError> result) {
+            if (result.Verify(out var error)) {
+                Extensions.WriteSuccess($"{label}: Valid");
+            }
+            else {
+                Extensions.WriteError($"{label}: Invalid - {DescribeValidationError(error)}");
+            }
+        }
+
+        private static string DescribeValidationError(TransactionValidationError error) => error switch {
+            TransactionValidationError.EmptySender => "sender address is empty",
+            TransactionValidationError.EmptyRecipient => "recipient address is empty",
+            TransactionValidationError.InvalidAmount => "amount must be positive",
+            TransactionValidationError.DuplicateId => "transaction id already exists",
+            TransactionValidationError.EmptySignatureOrSenderPublicKey => "signature or sender public key is missing",
+            TransactionValidationError.NonMatchingSignature => "signature does not match the transaction data",
+            TransactionValidationError.InsufficientBalance => "insufficient balance",
+            TransactionValidationError.PublicKeyNotMatchingSender => "sender address does not match the public key",
+            _ => "unknown reason"
+        };
+
+        public bool SearchUserOccurences() {
             Console.Clear();
             var user = Extensions.AskForItem(
                     _blockChain.Chain
@@ -280,6 +435,41 @@ namespace First {
                 [w => w.Name, w => w.Address]
                 );
 
+            return true;
+        }
+
+        public bool AddTransaction() {
+            SearchWallet(out var senderWallet, "Select sender-wallet: ");
+            if (senderWallet is null) {
+                Extensions.WriteError("No sender was selected");
+                Extensions.Pause();
+                return true;
+            }
+
+            SearchWallet(out var receiverWallet, "Select reciever-wallet: "); // Using wallet for simplicity, we don't actually need the wallet of the reciever - only his address
+            if (receiverWallet is null) {
+                Extensions.WriteError("No reciever was selected");
+                Extensions.Pause();
+                return true;
+            }
+
+            Console.Clear();
+            var amount = Extensions.GetNumber("Enter amount: ", "Error: Amount must be greater than zero!", [1, int.MaxValue]);
+
+            Console.Clear();
+            Console.WriteLine($"Sender: {senderWallet.Name,-8} : {senderWallet.Address}");
+            Console.WriteLine($"Reciever: {receiverWallet.Name,-6} : {receiverWallet.Address}");
+            Console.WriteLine($"Amount: {amount}\n");
+
+            var transaction = _transactionService.CreateTransaction(senderWallet, receiverWallet.Address, amount);
+            if (!_blockChain.AddTransaction(transaction).Verify(out var error)) {
+                Extensions.WriteError($"Failed to add transaction: {error}");
+                Extensions.Pause();
+                return true;
+            }
+
+            Extensions.WriteSuccess("Transaction added");
+            Extensions.Pause();
             return true;
         }
 
