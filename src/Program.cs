@@ -55,9 +55,10 @@ blockChain.MinePending(aliceWallet.Address);
 blockChain.AddTransactions([
     transactionService.CreateTransaction(illyaWallet, tomWallet.Address, 43),
     transactionService.CreateTransaction(illyaWallet, bobWallet.Address, 12),
-    transactionService.CreateTransaction(illyaWallet, aliceWallet.Address, 53),
+    transactionService.CreateTransaction(illyaWallet, aliceWallet.Address, 20),
 ]);
 
+blockChain.MinePending(bobWallet.Address);
 blockChain.MinePending(bobWallet.Address);
 
 

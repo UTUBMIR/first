@@ -90,7 +90,7 @@ public class BlockChainTests {
         Assert.True(_chain.AddTransactions([_transactionService.CreateTransaction(_bobWallet, _aliceWallet.Address, 23)]).IsSuccess);
         Assert.True(_chain.MinePending(_tomWallet.Address).IsSuccess);
 
-        Assert.Equal(200, _balanceService.GetBalance(_tomWallet.Address, _chain.Chain)); // mining reward
+        Assert.Equal(150, _balanceService.GetBalance(_tomWallet.Address, _chain.Chain)); // mining reward
 
         Assert.True(_chain.IsChainValid());
 

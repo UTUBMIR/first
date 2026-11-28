@@ -24,7 +24,8 @@ namespace First {
 
         public readonly double _targetBlockTime = 3;
         public readonly int _adjustmentInterval = 2;
-        private readonly decimal _minerReward = 50;
+        private readonly decimal _initialMinerReward = 50;
+        private readonly uint _halvingInterval = 5; // half every 5 blocks
 
         public BlockChain(int difficulty = 4, bool singleThreaded = false, bool useGpu = true) {
             Difficulty = difficulty;
@@ -34,6 +35,12 @@ namespace First {
             _balanceService = new BalanceService();
             _transactionService = new TransactionService();
             AddGenesisBlock();
+        }
+
+
+        private decimal GetRewardForBlock(int blockIndex) {
+            var halvings = (int)(blockIndex / _halvingInterval);
+            return _initialMinerReward / (decimal)Math.Pow(2, halvings);
         }
 
         private void AddGenesisBlock() {
@@ -128,7 +135,7 @@ namespace First {
                 }
             }
 
-            var coinbaseTransaction = Transaction.CreateCoinbaseTransaction(minerAddress, _minerReward);
+            var coinbaseTransaction = Transaction.CreateCoinbaseTransaction(minerAddress, GetRewardForBlock(Chain.Count));
             batch.Insert(0, coinbaseTransaction);
 
             var lastBlock = Chain[Chain.Count - 1];
@@ -252,7 +259,7 @@ namespace First {
                     var existingCoinbase = currentBlock.Transactions[0];
                     var coinbaseTo = existingCoinbase.To;
                     // Replace the coinbase transaction with a valid one (correct reward amount)
-                    var validCoinbase = Transaction.CreateCoinbaseTransaction(coinbaseTo, _minerReward);
+                    var validCoinbase = Transaction.CreateCoinbaseTransaction(coinbaseTo, GetRewardForBlock(currentBlock.Index));
                     currentBlock.Transactions[0] = validCoinbase;
                     currentBlock.MerkleRoot = _hashingService.ComputeMerkleRoot(currentBlock.Transactions);
                     currentBlock.Nonce = 0;
@@ -287,7 +294,7 @@ namespace First {
             var rewardTransaction = block.Transactions.FirstOrDefault();
             if (rewardTransaction is null ||
                 !rewardTransaction.IsCoinbase ||
-                rewardTransaction.Amount != _minerReward ||
+                rewardTransaction.Amount != GetRewardForBlock(block.Index) ||
                 string.IsNullOrWhiteSpace(rewardTransaction.To)) {
 
                 return false;
